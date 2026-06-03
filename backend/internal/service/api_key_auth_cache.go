@@ -34,6 +34,8 @@ type APIKeyAuthUserSnapshot struct {
 	Status      string  `json:"status"`
 	Role        string  `json:"role"`
 	Balance     float64 `json:"balance"`
+	PaidBalance float64 `json:"paid_balance"`
+	GiftBalance float64 `json:"gift_balance"`
 	Concurrency int     `json:"concurrency"`
 
 	// Balance notification fields (required for CheckBalanceAfterDeduction)
@@ -44,6 +46,7 @@ type APIKeyAuthUserSnapshot struct {
 	BalanceNotifyThreshold     *float64           `json:"balance_notify_threshold,omitempty"`
 	BalanceNotifyExtraEmails   []NotifyEmailEntry `json:"balance_notify_extra_emails,omitempty"`
 	TotalRecharged             float64            `json:"total_recharged"`
+	TotalGifted                float64            `json:"total_gifted"`
 
 	// RPMLimit 用户级每分钟请求数上限（0 = 不限制）；用于 billing_cache_service.checkRPM 兜底判断。
 	RPMLimit int `json:"rpm_limit"`
@@ -60,6 +63,7 @@ type APIKeyAuthGroupSnapshot struct {
 	Platform                        string   `json:"platform"`
 	Status                          string   `json:"status"`
 	SubscriptionType                string   `json:"subscription_type"`
+	BalanceTier                     string   `json:"balance_tier"`
 	RateMultiplier                  float64  `json:"rate_multiplier"`
 	DailyLimitUSD                   *float64 `json:"daily_limit_usd,omitempty"`
 	WeeklyLimitUSD                  *float64 `json:"weekly_limit_usd,omitempty"`

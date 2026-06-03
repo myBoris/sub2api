@@ -29,6 +29,10 @@ const (
 	FieldRole = "role"
 	// FieldBalance holds the string denoting the balance field in the database.
 	FieldBalance = "balance"
+	// FieldPaidBalance holds the string denoting the paid_balance field in the database.
+	FieldPaidBalance = "paid_balance"
+	// FieldGiftBalance holds the string denoting the gift_balance field in the database.
+	FieldGiftBalance = "gift_balance"
 	// FieldConcurrency holds the string denoting the concurrency field in the database.
 	FieldConcurrency = "concurrency"
 	// FieldStatus holds the string denoting the status field in the database.
@@ -59,6 +63,8 @@ const (
 	FieldBalanceNotifyExtraEmails = "balance_notify_extra_emails"
 	// FieldTotalRecharged holds the string denoting the total_recharged field in the database.
 	FieldTotalRecharged = "total_recharged"
+	// FieldTotalGifted holds the string denoting the total_gifted field in the database.
+	FieldTotalGifted = "total_gifted"
 	// FieldRpmLimit holds the string denoting the rpm_limit field in the database.
 	FieldRpmLimit = "rpm_limit"
 	// EdgeAPIKeys holds the string denoting the api_keys edge name in mutations.
@@ -199,6 +205,8 @@ var Columns = []string{
 	FieldPasswordHash,
 	FieldRole,
 	FieldBalance,
+	FieldPaidBalance,
+	FieldGiftBalance,
 	FieldConcurrency,
 	FieldStatus,
 	FieldUsername,
@@ -214,6 +222,7 @@ var Columns = []string{
 	FieldBalanceNotifyThreshold,
 	FieldBalanceNotifyExtraEmails,
 	FieldTotalRecharged,
+	FieldTotalGifted,
 	FieldRpmLimit,
 }
 
@@ -257,6 +266,10 @@ var (
 	RoleValidator func(string) error
 	// DefaultBalance holds the default value on creation for the "balance" field.
 	DefaultBalance float64
+	// DefaultPaidBalance holds the default value on creation for the "paid_balance" field.
+	DefaultPaidBalance float64
+	// DefaultGiftBalance holds the default value on creation for the "gift_balance" field.
+	DefaultGiftBalance float64
 	// DefaultConcurrency holds the default value on creation for the "concurrency" field.
 	DefaultConcurrency int
 	// DefaultStatus holds the default value on creation for the "status" field.
@@ -283,6 +296,8 @@ var (
 	DefaultBalanceNotifyExtraEmails string
 	// DefaultTotalRecharged holds the default value on creation for the "total_recharged" field.
 	DefaultTotalRecharged float64
+	// DefaultTotalGifted holds the default value on creation for the "total_gifted" field.
+	DefaultTotalGifted float64
 	// DefaultRpmLimit holds the default value on creation for the "rpm_limit" field.
 	DefaultRpmLimit int
 )
@@ -328,6 +343,16 @@ func ByRole(opts ...sql.OrderTermOption) OrderOption {
 // ByBalance orders the results by the balance field.
 func ByBalance(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldBalance, opts...).ToFunc()
+}
+
+// ByPaidBalance orders the results by the paid_balance field.
+func ByPaidBalance(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldPaidBalance, opts...).ToFunc()
+}
+
+// ByGiftBalance orders the results by the gift_balance field.
+func ByGiftBalance(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldGiftBalance, opts...).ToFunc()
 }
 
 // ByConcurrency orders the results by the concurrency field.
@@ -403,6 +428,11 @@ func ByBalanceNotifyExtraEmails(opts ...sql.OrderTermOption) OrderOption {
 // ByTotalRecharged orders the results by the total_recharged field.
 func ByTotalRecharged(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldTotalRecharged, opts...).ToFunc()
+}
+
+// ByTotalGifted orders the results by the total_gifted field.
+func ByTotalGifted(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldTotalGifted, opts...).ToFunc()
 }
 
 // ByRpmLimit orders the results by the rpm_limit field.

@@ -270,6 +270,7 @@ func TestApiKeyAuthWithSubscriptionGoogleSetsGroupContext(t *testing.T) {
 		Role:        service.RoleUser,
 		Status:      service.StatusActive,
 		Balance:     10,
+		GiftBalance: 10,
 		Concurrency: 3,
 	}
 	apiKey := &service.APIKey{
@@ -504,9 +505,10 @@ func TestApiKeyAuthWithSubscriptionGoogle_InsufficientBalance(t *testing.T) {
 				Key:    key,
 				Status: service.StatusActive,
 				User: &service.User{
-					ID:      123,
-					Status:  service.StatusActive,
-					Balance: 0,
+					ID:          123,
+					Status:      service.StatusActive,
+					Balance:     0,
+					GiftBalance: 0,
 				},
 			}, nil
 		},
@@ -523,7 +525,7 @@ func TestApiKeyAuthWithSubscriptionGoogle_InsufficientBalance(t *testing.T) {
 	var resp googleErrorResponse
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &resp))
 	require.Equal(t, http.StatusForbidden, resp.Error.Code)
-	require.Equal(t, "Insufficient account balance", resp.Error.Message)
+	require.Equal(t, "Insufficient gift balance for free group", resp.Error.Message)
 	require.Equal(t, "PERMISSION_DENIED", resp.Error.Status)
 }
 
@@ -535,6 +537,7 @@ func TestApiKeyAuthWithSubscriptionGoogle_TouchesLastUsedOnSuccess(t *testing.T)
 		Role:        service.RoleUser,
 		Status:      service.StatusActive,
 		Balance:     10,
+		GiftBalance: 10,
 		Concurrency: 3,
 	}
 	apiKey := &service.APIKey{
@@ -630,6 +633,7 @@ func TestApiKeyAuthWithSubscriptionGoogle_TouchesLastUsedInStandardMode(t *testi
 		Role:        service.RoleUser,
 		Status:      service.StatusActive,
 		Balance:     10,
+		GiftBalance: 10,
 		Concurrency: 3,
 	}
 	apiKey := &service.APIKey{

@@ -82,6 +82,18 @@ const (
 	RedeemTypeAffiliateBalance = "affiliate_balance"
 )
 
+// Balance source constants
+const (
+	BalanceSourcePaid = domain.BalanceSourcePaid
+	BalanceSourceGift = domain.BalanceSourceGift
+)
+
+// Group balance tier constants
+const (
+	GroupBalanceTierFree = domain.GroupBalanceTierFree
+	GroupBalanceTierPlus = domain.GroupBalanceTierPlus
+)
+
 // PromoCode status constants
 const (
 	PromoCodeStatusActive   = domain.PromoCodeStatusActive

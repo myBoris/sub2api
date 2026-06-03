@@ -401,6 +401,42 @@ func (s *UserRepoSuite) TestDeductBalance_AllowsOverdraft() {
 	s.Require().InDelta(-5.0, got.Balance, 1e-6, "Balance should be -5.0 after overdraft")
 }
 
+func (s *UserRepoSuite) TestDeductBalanceWithTier_FreeOnlyDeductsGiftBalance() {
+	user := s.mustCreateUser(&service.User{
+		Email:       "deduct-free-bucket@test.com",
+		Balance:     10,
+		PaidBalance: 7,
+		GiftBalance: 3,
+	})
+
+	err := s.repo.DeductBalanceWithTier(s.ctx, user.ID, 4, service.GroupBalanceTierFree)
+	s.Require().NoError(err)
+
+	got, err := s.repo.GetByID(s.ctx, user.ID)
+	s.Require().NoError(err)
+	s.Require().InDelta(6, got.Balance, 1e-6)
+	s.Require().InDelta(7, got.PaidBalance, 1e-6, "free tier must not consume paid balance")
+	s.Require().InDelta(-1, got.GiftBalance, 1e-6)
+}
+
+func (s *UserRepoSuite) TestDeductBalanceWithTier_PlusOnlyDeductsPaidBalance() {
+	user := s.mustCreateUser(&service.User{
+		Email:       "deduct-plus-bucket@test.com",
+		Balance:     10,
+		PaidBalance: 3,
+		GiftBalance: 7,
+	})
+
+	err := s.repo.DeductBalanceWithTier(s.ctx, user.ID, 4, service.GroupBalanceTierPlus)
+	s.Require().NoError(err)
+
+	got, err := s.repo.GetByID(s.ctx, user.ID)
+	s.Require().NoError(err)
+	s.Require().InDelta(6, got.Balance, 1e-6)
+	s.Require().InDelta(-1, got.PaidBalance, 1e-6)
+	s.Require().InDelta(7, got.GiftBalance, 1e-6, "plus tier must not consume gift balance")
+}
+
 // --- Concurrency ---
 
 func (s *UserRepoSuite) TestUpdateConcurrency() {

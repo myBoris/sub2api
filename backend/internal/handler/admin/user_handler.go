@@ -77,9 +77,10 @@ type UpdateUserRequest struct {
 
 // UpdateBalanceRequest represents balance update request
 type UpdateBalanceRequest struct {
-	Balance   float64 `json:"balance" binding:"required,gt=0"`
-	Operation string  `json:"operation" binding:"required,oneof=set add subtract"`
-	Notes     string  `json:"notes"`
+	Balance       float64 `json:"balance" binding:"required,gt=0"`
+	Operation     string  `json:"operation" binding:"required,oneof=set add subtract"`
+	Notes         string  `json:"notes"`
+	BalanceSource string  `json:"balance_source" binding:"omitempty,oneof=paid gift"`
 }
 
 type BindUserAuthIdentityRequest struct {
@@ -352,7 +353,7 @@ func (h *UserHandler) UpdateBalance(c *gin.Context) {
 		Body:   req,
 	}
 	executeAdminIdempotentJSON(c, "admin.users.balance.update", idempotencyPayload, service.DefaultWriteIdempotencyTTL(), func(ctx context.Context) (any, error) {
-		user, execErr := h.adminService.UpdateUserBalance(ctx, userID, req.Balance, req.Operation, req.Notes)
+		user, execErr := h.adminService.UpdateUserBalance(ctx, userID, req.Balance, req.Operation, req.Notes, req.BalanceSource)
 		if execErr != nil {
 			return nil, execErr
 		}
@@ -420,7 +421,7 @@ func (h *UserHandler) GetBalanceHistory(c *gin.Context) {
 	page, pageSize := response.ParsePagination(c)
 	codeType := c.Query("type")
 
-	codes, total, totalRecharged, err := h.adminService.GetUserBalanceHistory(c.Request.Context(), userID, page, pageSize, codeType)
+	codes, total, totalRecharged, totalGifted, err := h.adminService.GetUserBalanceHistory(c.Request.Context(), userID, page, pageSize, codeType)
 	if err != nil {
 		response.ErrorFrom(c, err)
 		return
@@ -432,7 +433,7 @@ func (h *UserHandler) GetBalanceHistory(c *gin.Context) {
 		out = append(out, *dto.RedeemCodeFromServiceAdmin(&codes[i]))
 	}
 
-	// Custom response with total_recharged alongside pagination
+	// Custom response with balance totals alongside pagination
 	pages := int((total + int64(pageSize) - 1) / int64(pageSize))
 	if pages < 1 {
 		pages = 1
@@ -444,6 +445,7 @@ func (h *UserHandler) GetBalanceHistory(c *gin.Context) {
 		"page_size":       pageSize,
 		"pages":           pages,
 		"total_recharged": totalRecharged,
+		"total_gifted":    totalGifted,
 	})
 }
 

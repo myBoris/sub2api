@@ -161,6 +161,20 @@ func (_c *GroupCreate) SetNillableSubscriptionType(v *string) *GroupCreate {
 	return _c
 }
 
+// SetBalanceTier sets the "balance_tier" field.
+func (_c *GroupCreate) SetBalanceTier(v string) *GroupCreate {
+	_c.mutation.SetBalanceTier(v)
+	return _c
+}
+
+// SetNillableBalanceTier sets the "balance_tier" field if the given value is not nil.
+func (_c *GroupCreate) SetNillableBalanceTier(v *string) *GroupCreate {
+	if v != nil {
+		_c.SetBalanceTier(*v)
+	}
+	return _c
+}
+
 // SetDailyLimitUsd sets the "daily_limit_usd" field.
 func (_c *GroupCreate) SetDailyLimitUsd(v float64) *GroupCreate {
 	_c.mutation.SetDailyLimitUsd(v)
@@ -656,6 +670,10 @@ func (_c *GroupCreate) defaults() error {
 		v := group.DefaultSubscriptionType
 		_c.mutation.SetSubscriptionType(v)
 	}
+	if _, ok := _c.mutation.BalanceTier(); !ok {
+		v := group.DefaultBalanceTier
+		_c.mutation.SetBalanceTier(v)
+	}
 	if _, ok := _c.mutation.DefaultValidityDays(); !ok {
 		v := group.DefaultDefaultValidityDays
 		_c.mutation.SetDefaultValidityDays(v)
@@ -767,6 +785,14 @@ func (_c *GroupCreate) check() error {
 	if v, ok := _c.mutation.SubscriptionType(); ok {
 		if err := group.SubscriptionTypeValidator(v); err != nil {
 			return &ValidationError{Name: "subscription_type", err: fmt.Errorf(`ent: validator failed for field "Group.subscription_type": %w`, err)}
+		}
+	}
+	if _, ok := _c.mutation.BalanceTier(); !ok {
+		return &ValidationError{Name: "balance_tier", err: errors.New(`ent: missing required field "Group.balance_tier"`)}
+	}
+	if v, ok := _c.mutation.BalanceTier(); ok {
+		if err := group.BalanceTierValidator(v); err != nil {
+			return &ValidationError{Name: "balance_tier", err: fmt.Errorf(`ent: validator failed for field "Group.balance_tier": %w`, err)}
 		}
 	}
 	if _, ok := _c.mutation.DefaultValidityDays(); !ok {
@@ -888,6 +914,10 @@ func (_c *GroupCreate) createSpec() (*Group, *sqlgraph.CreateSpec) {
 	if value, ok := _c.mutation.SubscriptionType(); ok {
 		_spec.SetField(group.FieldSubscriptionType, field.TypeString, value)
 		_node.SubscriptionType = value
+	}
+	if value, ok := _c.mutation.BalanceTier(); ok {
+		_spec.SetField(group.FieldBalanceTier, field.TypeString, value)
+		_node.BalanceTier = value
 	}
 	if value, ok := _c.mutation.DailyLimitUsd(); ok {
 		_spec.SetField(group.FieldDailyLimitUsd, field.TypeFloat64, value)
@@ -1268,6 +1298,18 @@ func (u *GroupUpsert) SetSubscriptionType(v string) *GroupUpsert {
 // UpdateSubscriptionType sets the "subscription_type" field to the value that was provided on create.
 func (u *GroupUpsert) UpdateSubscriptionType() *GroupUpsert {
 	u.SetExcluded(group.FieldSubscriptionType)
+	return u
+}
+
+// SetBalanceTier sets the "balance_tier" field.
+func (u *GroupUpsert) SetBalanceTier(v string) *GroupUpsert {
+	u.Set(group.FieldBalanceTier, v)
+	return u
+}
+
+// UpdateBalanceTier sets the "balance_tier" field to the value that was provided on create.
+func (u *GroupUpsert) UpdateBalanceTier() *GroupUpsert {
+	u.SetExcluded(group.FieldBalanceTier)
 	return u
 }
 
@@ -1886,6 +1928,20 @@ func (u *GroupUpsertOne) SetSubscriptionType(v string) *GroupUpsertOne {
 func (u *GroupUpsertOne) UpdateSubscriptionType() *GroupUpsertOne {
 	return u.Update(func(s *GroupUpsert) {
 		s.UpdateSubscriptionType()
+	})
+}
+
+// SetBalanceTier sets the "balance_tier" field.
+func (u *GroupUpsertOne) SetBalanceTier(v string) *GroupUpsertOne {
+	return u.Update(func(s *GroupUpsert) {
+		s.SetBalanceTier(v)
+	})
+}
+
+// UpdateBalanceTier sets the "balance_tier" field to the value that was provided on create.
+func (u *GroupUpsertOne) UpdateBalanceTier() *GroupUpsertOne {
+	return u.Update(func(s *GroupUpsert) {
+		s.UpdateBalanceTier()
 	})
 }
 
@@ -2741,6 +2797,20 @@ func (u *GroupUpsertBulk) SetSubscriptionType(v string) *GroupUpsertBulk {
 func (u *GroupUpsertBulk) UpdateSubscriptionType() *GroupUpsertBulk {
 	return u.Update(func(s *GroupUpsert) {
 		s.UpdateSubscriptionType()
+	})
+}
+
+// SetBalanceTier sets the "balance_tier" field.
+func (u *GroupUpsertBulk) SetBalanceTier(v string) *GroupUpsertBulk {
+	return u.Update(func(s *GroupUpsert) {
+		s.SetBalanceTier(v)
+	})
+}
+
+// UpdateBalanceTier sets the "balance_tier" field to the value that was provided on create.
+func (u *GroupUpsertBulk) UpdateBalanceTier() *GroupUpsertBulk {
+	return u.Update(func(s *GroupUpsert) {
+		s.UpdateBalanceTier()
 	})
 }
 

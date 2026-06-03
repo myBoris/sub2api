@@ -116,6 +116,34 @@ func (_c *UserCreate) SetNillableBalance(v *float64) *UserCreate {
 	return _c
 }
 
+// SetPaidBalance sets the "paid_balance" field.
+func (_c *UserCreate) SetPaidBalance(v float64) *UserCreate {
+	_c.mutation.SetPaidBalance(v)
+	return _c
+}
+
+// SetNillablePaidBalance sets the "paid_balance" field if the given value is not nil.
+func (_c *UserCreate) SetNillablePaidBalance(v *float64) *UserCreate {
+	if v != nil {
+		_c.SetPaidBalance(*v)
+	}
+	return _c
+}
+
+// SetGiftBalance sets the "gift_balance" field.
+func (_c *UserCreate) SetGiftBalance(v float64) *UserCreate {
+	_c.mutation.SetGiftBalance(v)
+	return _c
+}
+
+// SetNillableGiftBalance sets the "gift_balance" field if the given value is not nil.
+func (_c *UserCreate) SetNillableGiftBalance(v *float64) *UserCreate {
+	if v != nil {
+		_c.SetGiftBalance(*v)
+	}
+	return _c
+}
+
 // SetConcurrency sets the "concurrency" field.
 func (_c *UserCreate) SetConcurrency(v int) *UserCreate {
 	_c.mutation.SetConcurrency(v)
@@ -322,6 +350,20 @@ func (_c *UserCreate) SetTotalRecharged(v float64) *UserCreate {
 func (_c *UserCreate) SetNillableTotalRecharged(v *float64) *UserCreate {
 	if v != nil {
 		_c.SetTotalRecharged(*v)
+	}
+	return _c
+}
+
+// SetTotalGifted sets the "total_gifted" field.
+func (_c *UserCreate) SetTotalGifted(v float64) *UserCreate {
+	_c.mutation.SetTotalGifted(v)
+	return _c
+}
+
+// SetNillableTotalGifted sets the "total_gifted" field if the given value is not nil.
+func (_c *UserCreate) SetNillableTotalGifted(v *float64) *UserCreate {
+	if v != nil {
+		_c.SetTotalGifted(*v)
 	}
 	return _c
 }
@@ -594,6 +636,14 @@ func (_c *UserCreate) defaults() error {
 		v := user.DefaultBalance
 		_c.mutation.SetBalance(v)
 	}
+	if _, ok := _c.mutation.PaidBalance(); !ok {
+		v := user.DefaultPaidBalance
+		_c.mutation.SetPaidBalance(v)
+	}
+	if _, ok := _c.mutation.GiftBalance(); !ok {
+		v := user.DefaultGiftBalance
+		_c.mutation.SetGiftBalance(v)
+	}
 	if _, ok := _c.mutation.Concurrency(); !ok {
 		v := user.DefaultConcurrency
 		_c.mutation.SetConcurrency(v)
@@ -633,6 +683,10 @@ func (_c *UserCreate) defaults() error {
 	if _, ok := _c.mutation.TotalRecharged(); !ok {
 		v := user.DefaultTotalRecharged
 		_c.mutation.SetTotalRecharged(v)
+	}
+	if _, ok := _c.mutation.TotalGifted(); !ok {
+		v := user.DefaultTotalGifted
+		_c.mutation.SetTotalGifted(v)
 	}
 	if _, ok := _c.mutation.RpmLimit(); !ok {
 		v := user.DefaultRpmLimit
@@ -675,6 +729,12 @@ func (_c *UserCreate) check() error {
 	}
 	if _, ok := _c.mutation.Balance(); !ok {
 		return &ValidationError{Name: "balance", err: errors.New(`ent: missing required field "User.balance"`)}
+	}
+	if _, ok := _c.mutation.PaidBalance(); !ok {
+		return &ValidationError{Name: "paid_balance", err: errors.New(`ent: missing required field "User.paid_balance"`)}
+	}
+	if _, ok := _c.mutation.GiftBalance(); !ok {
+		return &ValidationError{Name: "gift_balance", err: errors.New(`ent: missing required field "User.gift_balance"`)}
 	}
 	if _, ok := _c.mutation.Concurrency(); !ok {
 		return &ValidationError{Name: "concurrency", err: errors.New(`ent: missing required field "User.concurrency"`)}
@@ -720,6 +780,9 @@ func (_c *UserCreate) check() error {
 	}
 	if _, ok := _c.mutation.TotalRecharged(); !ok {
 		return &ValidationError{Name: "total_recharged", err: errors.New(`ent: missing required field "User.total_recharged"`)}
+	}
+	if _, ok := _c.mutation.TotalGifted(); !ok {
+		return &ValidationError{Name: "total_gifted", err: errors.New(`ent: missing required field "User.total_gifted"`)}
 	}
 	if _, ok := _c.mutation.RpmLimit(); !ok {
 		return &ValidationError{Name: "rpm_limit", err: errors.New(`ent: missing required field "User.rpm_limit"`)}
@@ -778,6 +841,14 @@ func (_c *UserCreate) createSpec() (*User, *sqlgraph.CreateSpec) {
 	if value, ok := _c.mutation.Balance(); ok {
 		_spec.SetField(user.FieldBalance, field.TypeFloat64, value)
 		_node.Balance = value
+	}
+	if value, ok := _c.mutation.PaidBalance(); ok {
+		_spec.SetField(user.FieldPaidBalance, field.TypeFloat64, value)
+		_node.PaidBalance = value
+	}
+	if value, ok := _c.mutation.GiftBalance(); ok {
+		_spec.SetField(user.FieldGiftBalance, field.TypeFloat64, value)
+		_node.GiftBalance = value
 	}
 	if value, ok := _c.mutation.Concurrency(); ok {
 		_spec.SetField(user.FieldConcurrency, field.TypeInt, value)
@@ -838,6 +909,10 @@ func (_c *UserCreate) createSpec() (*User, *sqlgraph.CreateSpec) {
 	if value, ok := _c.mutation.TotalRecharged(); ok {
 		_spec.SetField(user.FieldTotalRecharged, field.TypeFloat64, value)
 		_node.TotalRecharged = value
+	}
+	if value, ok := _c.mutation.TotalGifted(); ok {
+		_spec.SetField(user.FieldTotalGifted, field.TypeFloat64, value)
+		_node.TotalGifted = value
 	}
 	if value, ok := _c.mutation.RpmLimit(); ok {
 		_spec.SetField(user.FieldRpmLimit, field.TypeInt, value)
@@ -1191,6 +1266,42 @@ func (u *UserUpsert) AddBalance(v float64) *UserUpsert {
 	return u
 }
 
+// SetPaidBalance sets the "paid_balance" field.
+func (u *UserUpsert) SetPaidBalance(v float64) *UserUpsert {
+	u.Set(user.FieldPaidBalance, v)
+	return u
+}
+
+// UpdatePaidBalance sets the "paid_balance" field to the value that was provided on create.
+func (u *UserUpsert) UpdatePaidBalance() *UserUpsert {
+	u.SetExcluded(user.FieldPaidBalance)
+	return u
+}
+
+// AddPaidBalance adds v to the "paid_balance" field.
+func (u *UserUpsert) AddPaidBalance(v float64) *UserUpsert {
+	u.Add(user.FieldPaidBalance, v)
+	return u
+}
+
+// SetGiftBalance sets the "gift_balance" field.
+func (u *UserUpsert) SetGiftBalance(v float64) *UserUpsert {
+	u.Set(user.FieldGiftBalance, v)
+	return u
+}
+
+// UpdateGiftBalance sets the "gift_balance" field to the value that was provided on create.
+func (u *UserUpsert) UpdateGiftBalance() *UserUpsert {
+	u.SetExcluded(user.FieldGiftBalance)
+	return u
+}
+
+// AddGiftBalance adds v to the "gift_balance" field.
+func (u *UserUpsert) AddGiftBalance(v float64) *UserUpsert {
+	u.Add(user.FieldGiftBalance, v)
+	return u
+}
+
 // SetConcurrency sets the "concurrency" field.
 func (u *UserUpsert) SetConcurrency(v int) *UserUpsert {
 	u.Set(user.FieldConcurrency, v)
@@ -1419,6 +1530,24 @@ func (u *UserUpsert) AddTotalRecharged(v float64) *UserUpsert {
 	return u
 }
 
+// SetTotalGifted sets the "total_gifted" field.
+func (u *UserUpsert) SetTotalGifted(v float64) *UserUpsert {
+	u.Set(user.FieldTotalGifted, v)
+	return u
+}
+
+// UpdateTotalGifted sets the "total_gifted" field to the value that was provided on create.
+func (u *UserUpsert) UpdateTotalGifted() *UserUpsert {
+	u.SetExcluded(user.FieldTotalGifted)
+	return u
+}
+
+// AddTotalGifted adds v to the "total_gifted" field.
+func (u *UserUpsert) AddTotalGifted(v float64) *UserUpsert {
+	u.Add(user.FieldTotalGifted, v)
+	return u
+}
+
 // SetRpmLimit sets the "rpm_limit" field.
 func (u *UserUpsert) SetRpmLimit(v int) *UserUpsert {
 	u.Set(user.FieldRpmLimit, v)
@@ -1577,6 +1706,48 @@ func (u *UserUpsertOne) AddBalance(v float64) *UserUpsertOne {
 func (u *UserUpsertOne) UpdateBalance() *UserUpsertOne {
 	return u.Update(func(s *UserUpsert) {
 		s.UpdateBalance()
+	})
+}
+
+// SetPaidBalance sets the "paid_balance" field.
+func (u *UserUpsertOne) SetPaidBalance(v float64) *UserUpsertOne {
+	return u.Update(func(s *UserUpsert) {
+		s.SetPaidBalance(v)
+	})
+}
+
+// AddPaidBalance adds v to the "paid_balance" field.
+func (u *UserUpsertOne) AddPaidBalance(v float64) *UserUpsertOne {
+	return u.Update(func(s *UserUpsert) {
+		s.AddPaidBalance(v)
+	})
+}
+
+// UpdatePaidBalance sets the "paid_balance" field to the value that was provided on create.
+func (u *UserUpsertOne) UpdatePaidBalance() *UserUpsertOne {
+	return u.Update(func(s *UserUpsert) {
+		s.UpdatePaidBalance()
+	})
+}
+
+// SetGiftBalance sets the "gift_balance" field.
+func (u *UserUpsertOne) SetGiftBalance(v float64) *UserUpsertOne {
+	return u.Update(func(s *UserUpsert) {
+		s.SetGiftBalance(v)
+	})
+}
+
+// AddGiftBalance adds v to the "gift_balance" field.
+func (u *UserUpsertOne) AddGiftBalance(v float64) *UserUpsertOne {
+	return u.Update(func(s *UserUpsert) {
+		s.AddGiftBalance(v)
+	})
+}
+
+// UpdateGiftBalance sets the "gift_balance" field to the value that was provided on create.
+func (u *UserUpsertOne) UpdateGiftBalance() *UserUpsertOne {
+	return u.Update(func(s *UserUpsert) {
+		s.UpdateGiftBalance()
 	})
 }
 
@@ -1843,6 +2014,27 @@ func (u *UserUpsertOne) AddTotalRecharged(v float64) *UserUpsertOne {
 func (u *UserUpsertOne) UpdateTotalRecharged() *UserUpsertOne {
 	return u.Update(func(s *UserUpsert) {
 		s.UpdateTotalRecharged()
+	})
+}
+
+// SetTotalGifted sets the "total_gifted" field.
+func (u *UserUpsertOne) SetTotalGifted(v float64) *UserUpsertOne {
+	return u.Update(func(s *UserUpsert) {
+		s.SetTotalGifted(v)
+	})
+}
+
+// AddTotalGifted adds v to the "total_gifted" field.
+func (u *UserUpsertOne) AddTotalGifted(v float64) *UserUpsertOne {
+	return u.Update(func(s *UserUpsert) {
+		s.AddTotalGifted(v)
+	})
+}
+
+// UpdateTotalGifted sets the "total_gifted" field to the value that was provided on create.
+func (u *UserUpsertOne) UpdateTotalGifted() *UserUpsertOne {
+	return u.Update(func(s *UserUpsert) {
+		s.UpdateTotalGifted()
 	})
 }
 
@@ -2176,6 +2368,48 @@ func (u *UserUpsertBulk) UpdateBalance() *UserUpsertBulk {
 	})
 }
 
+// SetPaidBalance sets the "paid_balance" field.
+func (u *UserUpsertBulk) SetPaidBalance(v float64) *UserUpsertBulk {
+	return u.Update(func(s *UserUpsert) {
+		s.SetPaidBalance(v)
+	})
+}
+
+// AddPaidBalance adds v to the "paid_balance" field.
+func (u *UserUpsertBulk) AddPaidBalance(v float64) *UserUpsertBulk {
+	return u.Update(func(s *UserUpsert) {
+		s.AddPaidBalance(v)
+	})
+}
+
+// UpdatePaidBalance sets the "paid_balance" field to the value that was provided on create.
+func (u *UserUpsertBulk) UpdatePaidBalance() *UserUpsertBulk {
+	return u.Update(func(s *UserUpsert) {
+		s.UpdatePaidBalance()
+	})
+}
+
+// SetGiftBalance sets the "gift_balance" field.
+func (u *UserUpsertBulk) SetGiftBalance(v float64) *UserUpsertBulk {
+	return u.Update(func(s *UserUpsert) {
+		s.SetGiftBalance(v)
+	})
+}
+
+// AddGiftBalance adds v to the "gift_balance" field.
+func (u *UserUpsertBulk) AddGiftBalance(v float64) *UserUpsertBulk {
+	return u.Update(func(s *UserUpsert) {
+		s.AddGiftBalance(v)
+	})
+}
+
+// UpdateGiftBalance sets the "gift_balance" field to the value that was provided on create.
+func (u *UserUpsertBulk) UpdateGiftBalance() *UserUpsertBulk {
+	return u.Update(func(s *UserUpsert) {
+		s.UpdateGiftBalance()
+	})
+}
+
 // SetConcurrency sets the "concurrency" field.
 func (u *UserUpsertBulk) SetConcurrency(v int) *UserUpsertBulk {
 	return u.Update(func(s *UserUpsert) {
@@ -2439,6 +2673,27 @@ func (u *UserUpsertBulk) AddTotalRecharged(v float64) *UserUpsertBulk {
 func (u *UserUpsertBulk) UpdateTotalRecharged() *UserUpsertBulk {
 	return u.Update(func(s *UserUpsert) {
 		s.UpdateTotalRecharged()
+	})
+}
+
+// SetTotalGifted sets the "total_gifted" field.
+func (u *UserUpsertBulk) SetTotalGifted(v float64) *UserUpsertBulk {
+	return u.Update(func(s *UserUpsert) {
+		s.SetTotalGifted(v)
+	})
+}
+
+// AddTotalGifted adds v to the "total_gifted" field.
+func (u *UserUpsertBulk) AddTotalGifted(v float64) *UserUpsertBulk {
+	return u.Update(func(s *UserUpsert) {
+		s.AddTotalGifted(v)
+	})
+}
+
+// UpdateTotalGifted sets the "total_gifted" field to the value that was provided on create.
+func (u *UserUpsertBulk) UpdateTotalGifted() *UserUpsertBulk {
+	return u.Update(func(s *UserUpsert) {
+		s.UpdateTotalGifted()
 	})
 }
 

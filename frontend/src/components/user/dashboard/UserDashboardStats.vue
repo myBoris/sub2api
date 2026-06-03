@@ -12,7 +12,11 @@
         <div>
           <p class="text-xs font-medium text-gray-500 dark:text-gray-400">{{ t('dashboard.balance') }}</p>
           <p class="text-xl font-bold text-emerald-600 dark:text-emerald-400">${{ formatBalance(balance) }}</p>
-          <p class="text-xs text-gray-500 dark:text-gray-400">{{ t('common.available') }}</p>
+          <p class="text-xs text-gray-500 dark:text-gray-400">
+            {{ t('balance.paidShort') }} ${{ formatBalance(balanceSplit.paid) }}
+            ·
+            {{ t('balance.giftShort') }} ${{ formatBalance(balanceSplit.gift) }}
+          </p>
         </div>
       </div>
     </div>
@@ -227,7 +231,8 @@ import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import Icon from '@/components/icons/Icon.vue'
 import type { UserDashboardStats as UserStatsType } from '@/api/usage'
-import type { PlatformQuotaItem } from '@/types'
+import type { PlatformQuotaItem, User } from '@/types'
+import { getBalanceSplit } from '@/utils/balance'
 
 interface FusedPlatformCard {
   platform: string
@@ -242,6 +247,7 @@ interface FusedPlatformCard {
 const props = defineProps<{
   stats: UserStatsType
   balance: number
+  user?: User | null
   isSimple: boolean
   platformQuotas?: PlatformQuotaItem[] | null
 }>()
@@ -255,6 +261,7 @@ const PLATFORM_LABELS: Record<string, string> = {
 }
 
 const platformLabel = (p: string) => PLATFORM_LABELS[p] ?? p
+const balanceSplit = computed(() => getBalanceSplit(props.user || { balance: props.balance }))
 
 const sortedPlatforms = computed(() => {
   const list = props.stats?.by_platform ?? []

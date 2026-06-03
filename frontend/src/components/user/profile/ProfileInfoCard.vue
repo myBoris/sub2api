@@ -69,6 +69,11 @@
                 <p class="mt-1 text-lg font-semibold text-gray-900 dark:text-white">
                   {{ formatCurrency(user?.balance || 0) }}
                 </p>
+                <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                  {{ t('balance.paidShort') }} {{ formatCurrency(balanceSplit.paid) }}
+                  ·
+                  {{ t('balance.giftShort') }} {{ formatCurrency(balanceSplit.gift) }}
+                </p>
               </div>
               <div
                 data-testid="profile-overview-metric-concurrency"
@@ -187,6 +192,7 @@ import ProfileAvatarCard from '@/components/user/profile/ProfileAvatarCard.vue'
 import ProfileEditForm from '@/components/user/profile/ProfileEditForm.vue'
 import ProfileIdentityBindingsSection from '@/components/user/profile/ProfileIdentityBindingsSection.vue'
 import type { User, UserAuthBindingStatus, UserAuthProvider, UserProfileSourceContext } from '@/types'
+import { getBalanceSplit } from '@/utils/balance'
 
 const props = withDefaults(defineProps<{
   user: User | null
@@ -233,6 +239,7 @@ function isEmailBound(user: User | null | undefined): boolean {
 }
 
 const avatarUrl = computed(() => props.user?.avatar_url?.trim() || '')
+const balanceSplit = computed(() => getBalanceSplit(props.user))
 const displayName = computed(() => props.user?.username?.trim() || props.user?.email?.trim() || t('profile.user'))
 const primaryEmailDisplay = computed(() => {
   const email = props.user?.email?.trim() || ''

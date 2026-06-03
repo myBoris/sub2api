@@ -35,6 +35,7 @@ export interface NotifyEmailEntry {
 // ==================== User & Auth Types ====================
 
 export type UserAuthProvider = 'email' | 'linuxdo' | 'oidc' | 'wechat' | 'github' | 'google' | 'dingtalk'
+export type BalanceSource = 'paid' | 'gift'
 
 export interface UserAuthBindingStatus {
   bound?: boolean
@@ -86,6 +87,10 @@ export interface User {
   wechat_bound?: boolean
   role: 'admin' | 'user' // User role for authorization
   balance: number // User balance for API usage
+  paid_balance?: number // Current paid balance
+  gift_balance?: number // Current free/gift balance
+  total_recharged?: number // Cumulative paid top-up amount
+  total_gifted?: number // Cumulative gifted balance amount
   concurrency: number // Allowed concurrent requests
   rpm_limit?: number // User-level RPM cap (0 = unlimited); effective as fallback when group has no rpm_limit
   status: 'active' | 'disabled' // Account status
@@ -489,6 +494,8 @@ export type GroupPlatform = 'anthropic' | 'openai' | 'gemini' | 'antigravity'
 
 export type SubscriptionType = 'standard' | 'subscription'
 
+export type GroupBalanceTier = 'free' | 'plus'
+
 export interface OpenAIMessagesDispatchModelConfig {
   opus_mapped_model?: string
   sonnet_mapped_model?: string
@@ -506,6 +513,7 @@ export interface Group {
   is_exclusive: boolean
   status: 'active' | 'inactive'
   subscription_type: SubscriptionType
+  balance_tier: GroupBalanceTier
   daily_limit_usd: number | null
   weekly_limit_usd: number | null
   monthly_limit_usd: number | null
@@ -625,6 +633,7 @@ export interface CreateGroupRequest {
   rate_multiplier?: number
   is_exclusive?: boolean
   subscription_type?: SubscriptionType
+  balance_tier?: GroupBalanceTier
   daily_limit_usd?: number | null
   weekly_limit_usd?: number | null
   monthly_limit_usd?: number | null
@@ -660,6 +669,7 @@ export interface UpdateGroupRequest {
   is_exclusive?: boolean
   status?: 'active' | 'inactive'
   subscription_type?: SubscriptionType
+  balance_tier?: GroupBalanceTier
   daily_limit_usd?: number | null
   weekly_limit_usd?: number | null
   monthly_limit_usd?: number | null
@@ -1311,6 +1321,7 @@ export interface RedeemCode {
   code: string
   type: RedeemCodeType
   value: number
+  balance_source?: BalanceSource
   status: 'active' | 'used' | 'expired' | 'unused' | 'disabled'
   used_by: number | null
   used_at: string | null
@@ -1328,6 +1339,7 @@ export interface GenerateRedeemCodesRequest {
   count: number
   type: RedeemCodeType
   value: number
+  balance_source?: BalanceSource
   group_id?: number | null // 订阅类型专用
   validity_days?: number // 订阅类型专用
   expires_at?: string | null

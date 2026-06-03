@@ -722,8 +722,14 @@ func (s *BillingCacheService) CheckBillingEligibility(ctx context.Context, user 
 			return err
 		}
 	} else {
-		if err := s.checkBalanceEligibility(ctx, user.ID); err != nil {
-			return err
+		if group != nil && group.IsPlusBalanceTier() {
+			if err := s.checkPlusPaidBalanceEligibility(ctx, user.ID); err != nil {
+				return err
+			}
+		} else {
+			if err := s.checkFreeGiftBalanceEligibility(ctx, user.ID); err != nil {
+				return err
+			}
 		}
 	}
 
@@ -746,6 +752,34 @@ func (s *BillingCacheService) CheckBillingEligibility(ctx context.Context, user 
 		return err
 	}
 
+	return nil
+}
+
+func (s *BillingCacheService) checkFreeGiftBalanceEligibility(ctx context.Context, userID int64) error {
+	if s.userRepo == nil {
+		return ErrBillingServiceUnavailable
+	}
+	user, err := s.userRepo.GetByID(ctx, userID)
+	if err != nil {
+		return err
+	}
+	if user.GiftBalance <= 0 {
+		return ErrInsufficientGiftBalance
+	}
+	return nil
+}
+
+func (s *BillingCacheService) checkPlusPaidBalanceEligibility(ctx context.Context, userID int64) error {
+	if s.userRepo == nil {
+		return ErrBillingServiceUnavailable
+	}
+	user, err := s.userRepo.GetByID(ctx, userID)
+	if err != nil {
+		return err
+	}
+	if user.PaidBalance <= 0 {
+		return ErrInsufficientPaidBalance
+	}
 	return nil
 }
 

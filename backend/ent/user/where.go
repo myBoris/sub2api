@@ -90,6 +90,16 @@ func Balance(v float64) predicate.User {
 	return predicate.User(sql.FieldEQ(FieldBalance, v))
 }
 
+// PaidBalance applies equality check predicate on the "paid_balance" field. It's identical to PaidBalanceEQ.
+func PaidBalance(v float64) predicate.User {
+	return predicate.User(sql.FieldEQ(FieldPaidBalance, v))
+}
+
+// GiftBalance applies equality check predicate on the "gift_balance" field. It's identical to GiftBalanceEQ.
+func GiftBalance(v float64) predicate.User {
+	return predicate.User(sql.FieldEQ(FieldGiftBalance, v))
+}
+
 // Concurrency applies equality check predicate on the "concurrency" field. It's identical to ConcurrencyEQ.
 func Concurrency(v int) predicate.User {
 	return predicate.User(sql.FieldEQ(FieldConcurrency, v))
@@ -163,6 +173,11 @@ func BalanceNotifyExtraEmails(v string) predicate.User {
 // TotalRecharged applies equality check predicate on the "total_recharged" field. It's identical to TotalRechargedEQ.
 func TotalRecharged(v float64) predicate.User {
 	return predicate.User(sql.FieldEQ(FieldTotalRecharged, v))
+}
+
+// TotalGifted applies equality check predicate on the "total_gifted" field. It's identical to TotalGiftedEQ.
+func TotalGifted(v float64) predicate.User {
+	return predicate.User(sql.FieldEQ(FieldTotalGifted, v))
 }
 
 // RpmLimit applies equality check predicate on the "rpm_limit" field. It's identical to RpmLimitEQ.
@@ -533,6 +548,86 @@ func BalanceLT(v float64) predicate.User {
 // BalanceLTE applies the LTE predicate on the "balance" field.
 func BalanceLTE(v float64) predicate.User {
 	return predicate.User(sql.FieldLTE(FieldBalance, v))
+}
+
+// PaidBalanceEQ applies the EQ predicate on the "paid_balance" field.
+func PaidBalanceEQ(v float64) predicate.User {
+	return predicate.User(sql.FieldEQ(FieldPaidBalance, v))
+}
+
+// PaidBalanceNEQ applies the NEQ predicate on the "paid_balance" field.
+func PaidBalanceNEQ(v float64) predicate.User {
+	return predicate.User(sql.FieldNEQ(FieldPaidBalance, v))
+}
+
+// PaidBalanceIn applies the In predicate on the "paid_balance" field.
+func PaidBalanceIn(vs ...float64) predicate.User {
+	return predicate.User(sql.FieldIn(FieldPaidBalance, vs...))
+}
+
+// PaidBalanceNotIn applies the NotIn predicate on the "paid_balance" field.
+func PaidBalanceNotIn(vs ...float64) predicate.User {
+	return predicate.User(sql.FieldNotIn(FieldPaidBalance, vs...))
+}
+
+// PaidBalanceGT applies the GT predicate on the "paid_balance" field.
+func PaidBalanceGT(v float64) predicate.User {
+	return predicate.User(sql.FieldGT(FieldPaidBalance, v))
+}
+
+// PaidBalanceGTE applies the GTE predicate on the "paid_balance" field.
+func PaidBalanceGTE(v float64) predicate.User {
+	return predicate.User(sql.FieldGTE(FieldPaidBalance, v))
+}
+
+// PaidBalanceLT applies the LT predicate on the "paid_balance" field.
+func PaidBalanceLT(v float64) predicate.User {
+	return predicate.User(sql.FieldLT(FieldPaidBalance, v))
+}
+
+// PaidBalanceLTE applies the LTE predicate on the "paid_balance" field.
+func PaidBalanceLTE(v float64) predicate.User {
+	return predicate.User(sql.FieldLTE(FieldPaidBalance, v))
+}
+
+// GiftBalanceEQ applies the EQ predicate on the "gift_balance" field.
+func GiftBalanceEQ(v float64) predicate.User {
+	return predicate.User(sql.FieldEQ(FieldGiftBalance, v))
+}
+
+// GiftBalanceNEQ applies the NEQ predicate on the "gift_balance" field.
+func GiftBalanceNEQ(v float64) predicate.User {
+	return predicate.User(sql.FieldNEQ(FieldGiftBalance, v))
+}
+
+// GiftBalanceIn applies the In predicate on the "gift_balance" field.
+func GiftBalanceIn(vs ...float64) predicate.User {
+	return predicate.User(sql.FieldIn(FieldGiftBalance, vs...))
+}
+
+// GiftBalanceNotIn applies the NotIn predicate on the "gift_balance" field.
+func GiftBalanceNotIn(vs ...float64) predicate.User {
+	return predicate.User(sql.FieldNotIn(FieldGiftBalance, vs...))
+}
+
+// GiftBalanceGT applies the GT predicate on the "gift_balance" field.
+func GiftBalanceGT(v float64) predicate.User {
+	return predicate.User(sql.FieldGT(FieldGiftBalance, v))
+}
+
+// GiftBalanceGTE applies the GTE predicate on the "gift_balance" field.
+func GiftBalanceGTE(v float64) predicate.User {
+	return predicate.User(sql.FieldGTE(FieldGiftBalance, v))
+}
+
+// GiftBalanceLT applies the LT predicate on the "gift_balance" field.
+func GiftBalanceLT(v float64) predicate.User {
+	return predicate.User(sql.FieldLT(FieldGiftBalance, v))
+}
+
+// GiftBalanceLTE applies the LTE predicate on the "gift_balance" field.
+func GiftBalanceLTE(v float64) predicate.User {
+	return predicate.User(sql.FieldLTE(FieldGiftBalance, v))
 }
 
 // ConcurrencyEQ applies the EQ predicate on the "concurrency" field.
@@ -1298,6 +1393,46 @@ func TotalRechargedLT(v float64) predicate.User {
 // TotalRechargedLTE applies the LTE predicate on the "total_recharged" field.
 func TotalRechargedLTE(v float64) predicate.User {
 	return predicate.User(sql.FieldLTE(FieldTotalRecharged, v))
+}
+
+// TotalGiftedEQ applies the EQ predicate on the "total_gifted" field.
+func TotalGiftedEQ(v float64) predicate.User {
+	return predicate.User(sql.FieldEQ(FieldTotalGifted, v))
+}
+
+// TotalGiftedNEQ applies the NEQ predicate on the "total_gifted" field.
+func TotalGiftedNEQ(v float64) predicate.User {
+	return predicate.User(sql.FieldNEQ(FieldTotalGifted, v))
+}
+
+// TotalGiftedIn applies the In predicate on the "total_gifted" field.
+func TotalGiftedIn(vs ...float64) predicate.User {
+	return predicate.User(sql.FieldIn(FieldTotalGifted, vs...))
+}
+
+// TotalGiftedNotIn applies the NotIn predicate on the "total_gifted" field.
+func TotalGiftedNotIn(vs ...float64) predicate.User {
+	return predicate.User(sql.FieldNotIn(FieldTotalGifted, vs...))
+}
+
+// TotalGiftedGT applies the GT predicate on the "total_gifted" field.
+func TotalGiftedGT(v float64) predicate.User {
+	return predicate.User(sql.FieldGT(FieldTotalGifted, v))
+}
+
+// TotalGiftedGTE applies the GTE predicate on the "total_gifted" field.
+func TotalGiftedGTE(v float64) predicate.User {
+	return predicate.User(sql.FieldGTE(FieldTotalGifted, v))
+}
+
+// TotalGiftedLT applies the LT predicate on the "total_gifted" field.
+func TotalGiftedLT(v float64) predicate.User {
+	return predicate.User(sql.FieldLT(FieldTotalGifted, v))
+}
+
+// TotalGiftedLTE applies the LTE predicate on the "total_gifted" field.
+func TotalGiftedLTE(v float64) predicate.User {
+	return predicate.User(sql.FieldLTE(FieldTotalGifted, v))
 }
 
 // RpmLimitEQ applies the EQ predicate on the "rpm_limit" field.

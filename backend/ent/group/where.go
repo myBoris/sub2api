@@ -105,6 +105,11 @@ func SubscriptionType(v string) predicate.Group {
 	return predicate.Group(sql.FieldEQ(FieldSubscriptionType, v))
 }
 
+// BalanceTier applies equality check predicate on the "balance_tier" field. It's identical to BalanceTierEQ.
+func BalanceTier(v string) predicate.Group {
+	return predicate.Group(sql.FieldEQ(FieldBalanceTier, v))
+}
+
 // DailyLimitUsd applies equality check predicate on the "daily_limit_usd" field. It's identical to DailyLimitUsdEQ.
 func DailyLimitUsd(v float64) predicate.Group {
 	return predicate.Group(sql.FieldEQ(FieldDailyLimitUsd, v))
@@ -723,6 +728,71 @@ func SubscriptionTypeEqualFold(v string) predicate.Group {
 // SubscriptionTypeContainsFold applies the ContainsFold predicate on the "subscription_type" field.
 func SubscriptionTypeContainsFold(v string) predicate.Group {
 	return predicate.Group(sql.FieldContainsFold(FieldSubscriptionType, v))
+}
+
+// BalanceTierEQ applies the EQ predicate on the "balance_tier" field.
+func BalanceTierEQ(v string) predicate.Group {
+	return predicate.Group(sql.FieldEQ(FieldBalanceTier, v))
+}
+
+// BalanceTierNEQ applies the NEQ predicate on the "balance_tier" field.
+func BalanceTierNEQ(v string) predicate.Group {
+	return predicate.Group(sql.FieldNEQ(FieldBalanceTier, v))
+}
+
+// BalanceTierIn applies the In predicate on the "balance_tier" field.
+func BalanceTierIn(vs ...string) predicate.Group {
+	return predicate.Group(sql.FieldIn(FieldBalanceTier, vs...))
+}
+
+// BalanceTierNotIn applies the NotIn predicate on the "balance_tier" field.
+func BalanceTierNotIn(vs ...string) predicate.Group {
+	return predicate.Group(sql.FieldNotIn(FieldBalanceTier, vs...))
+}
+
+// BalanceTierGT applies the GT predicate on the "balance_tier" field.
+func BalanceTierGT(v string) predicate.Group {
+	return predicate.Group(sql.FieldGT(FieldBalanceTier, v))
+}
+
+// BalanceTierGTE applies the GTE predicate on the "balance_tier" field.
+func BalanceTierGTE(v string) predicate.Group {
+	return predicate.Group(sql.FieldGTE(FieldBalanceTier, v))
+}
+
+// BalanceTierLT applies the LT predicate on the "balance_tier" field.
+func BalanceTierLT(v string) predicate.Group {
+	return predicate.Group(sql.FieldLT(FieldBalanceTier, v))
+}
+
+// BalanceTierLTE applies the LTE predicate on the "balance_tier" field.
+func BalanceTierLTE(v string) predicate.Group {
+	return predicate.Group(sql.FieldLTE(FieldBalanceTier, v))
+}
+
+// BalanceTierContains applies the Contains predicate on the "balance_tier" field.
+func BalanceTierContains(v string) predicate.Group {
+	return predicate.Group(sql.FieldContains(FieldBalanceTier, v))
+}
+
+// BalanceTierHasPrefix applies the HasPrefix predicate on the "balance_tier" field.
+func BalanceTierHasPrefix(v string) predicate.Group {
+	return predicate.Group(sql.FieldHasPrefix(FieldBalanceTier, v))
+}
+
+// BalanceTierHasSuffix applies the HasSuffix predicate on the "balance_tier" field.
+func BalanceTierHasSuffix(v string) predicate.Group {
+	return predicate.Group(sql.FieldHasSuffix(FieldBalanceTier, v))
+}
+
+// BalanceTierEqualFold applies the EqualFold predicate on the "balance_tier" field.
+func BalanceTierEqualFold(v string) predicate.Group {
+	return predicate.Group(sql.FieldEqualFold(FieldBalanceTier, v))
+}
+
+// BalanceTierContainsFold applies the ContainsFold predicate on the "balance_tier" field.
+func BalanceTierContainsFold(v string) predicate.Group {
+	return predicate.Group(sql.FieldContainsFold(FieldBalanceTier, v))
 }
 
 // DailyLimitUsdEQ applies the EQ predicate on the "daily_limit_usd" field.

@@ -13,6 +13,11 @@
           <p class="mt-2 text-4xl font-bold text-white">
             ${{ user?.balance?.toFixed(2) || '0.00' }}
           </p>
+          <p class="mt-2 text-xs text-primary-100">
+            {{ t('balance.paidBalance') }} ${{ balanceSplit.paid.toFixed(2) }}
+            ·
+            {{ t('balance.giftBalance') }} ${{ balanceSplit.gift.toFixed(2) }}
+          </p>
           <p class="mt-2 text-sm text-primary-100">
             {{ t('redeem.concurrency') }}: {{ user?.concurrency || 0 }} {{ t('redeem.requests') }}
           </p>
@@ -351,6 +356,7 @@ import { redeemAPI, authAPI, type RedeemHistoryItem } from '@/api'
 import AppLayout from '@/components/layout/AppLayout.vue'
 import Icon from '@/components/icons/Icon.vue'
 import { formatDateTime } from '@/utils/format'
+import { getBalanceSplit } from '@/utils/balance'
 
 const { t } = useI18n()
 const authStore = useAuthStore()
@@ -358,6 +364,7 @@ const appStore = useAppStore()
 const subscriptionStore = useSubscriptionStore()
 
 const user = computed(() => authStore.user)
+const balanceSplit = computed(() => getBalanceSplit(user.value))
 
 const redeemCode = ref('')
 const submitting = ref(false)

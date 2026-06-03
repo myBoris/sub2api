@@ -27,6 +27,7 @@ func (r *redeemCodeRepository) Create(ctx context.Context, code *service.RedeemC
 		SetCode(code.Code).
 		SetType(code.Type).
 		SetValue(code.Value).
+		SetBalanceSource(service.BalanceSourceOrPaid(code.BalanceSource)).
 		SetStatus(code.Status).
 		SetNotes(code.Notes).
 		SetValidityDays(code.ValidityDays).
@@ -54,6 +55,7 @@ func (r *redeemCodeRepository) CreateBatch(ctx context.Context, codes []service.
 			SetCode(c.Code).
 			SetType(c.Type).
 			SetValue(c.Value).
+			SetBalanceSource(service.BalanceSourceOrPaid(c.BalanceSource)).
 			SetStatus(c.Status).
 			SetNotes(c.Notes).
 			SetValidityDays(c.ValidityDays).
@@ -200,6 +202,7 @@ func (r *redeemCodeRepository) Update(ctx context.Context, code *service.RedeemC
 		SetCode(code.Code).
 		SetType(code.Type).
 		SetValue(code.Value).
+		SetBalanceSource(service.BalanceSourceOrPaid(code.BalanceSource)).
 		SetStatus(code.Status).
 		SetNotes(code.Notes).
 		SetValidityDays(code.ValidityDays)
@@ -413,18 +416,19 @@ func redeemCodeEntityToService(m *dbent.RedeemCode) *service.RedeemCode {
 		return nil
 	}
 	out := &service.RedeemCode{
-		ID:           m.ID,
-		Code:         m.Code,
-		Type:         m.Type,
-		Value:        m.Value,
-		Status:       m.Status,
-		UsedBy:       m.UsedBy,
-		UsedAt:       m.UsedAt,
-		Notes:        derefString(m.Notes),
-		CreatedAt:    m.CreatedAt,
-		ExpiresAt:    m.ExpiresAt,
-		GroupID:      m.GroupID,
-		ValidityDays: m.ValidityDays,
+		ID:            m.ID,
+		Code:          m.Code,
+		Type:          m.Type,
+		Value:         m.Value,
+		BalanceSource: m.BalanceSource,
+		Status:        m.Status,
+		UsedBy:        m.UsedBy,
+		UsedAt:        m.UsedAt,
+		Notes:         derefString(m.Notes),
+		CreatedAt:     m.CreatedAt,
+		ExpiresAt:     m.ExpiresAt,
+		GroupID:       m.GroupID,
+		ValidityDays:  m.ValidityDays,
 	}
 	if m.Edges.User != nil {
 		out.User = userEntityToService(m.Edges.User)

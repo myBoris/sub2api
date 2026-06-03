@@ -1,6 +1,8 @@
 package schema
 
 import (
+	"fmt"
+
 	"github.com/Wei-Shaw/sub2api/ent/schema/mixins"
 	"github.com/Wei-Shaw/sub2api/internal/domain"
 
@@ -58,6 +60,18 @@ func (Group) Fields() []ent.Field {
 		field.String("subscription_type").
 			MaxLen(20).
 			Default(domain.SubscriptionTypeStandard),
+		field.String("balance_tier").
+			MaxLen(20).
+			Validate(func(value string) error {
+				switch value {
+				case domain.GroupBalanceTierFree, domain.GroupBalanceTierPlus:
+					return nil
+				default:
+					return fmt.Errorf("must be one of free, plus")
+				}
+			}).
+			Default(domain.GroupBalanceTierFree).
+			Comment("余额等级：free 可使用赠送/付费余额，plus 仅可使用付费余额"),
 		field.Float("daily_limit_usd").
 			Optional().
 			Nillable().

@@ -37,15 +37,15 @@ type AdminService interface {
 	CreateUser(ctx context.Context, input *CreateUserInput) (*User, error)
 	UpdateUser(ctx context.Context, id int64, input *UpdateUserInput) (*User, error)
 	DeleteUser(ctx context.Context, id int64) error
-	UpdateUserBalance(ctx context.Context, userID int64, balance float64, operation string, notes string) (*User, error)
+	UpdateUserBalance(ctx context.Context, userID int64, balance float64, operation string, notes string, balanceSource string) (*User, error)
 	BatchUpdateConcurrency(ctx context.Context, userIDs []int64, value int, mode string) (int, error)
 	GetUserAPIKeys(ctx context.Context, userID int64, page, pageSize int, sortBy, sortOrder string) ([]APIKey, int64, error)
 	GetUserUsageStats(ctx context.Context, userID int64, period string) (any, error)
 	GetUserRPMStatus(ctx context.Context, userID int64) (*UserRPMStatus, error)
 	// GetUserBalanceHistory returns paginated balance/concurrency change records for a user.
 	// codeType is optional - pass empty string to return all types.
-	// Also returns totalRecharged (sum of all positive balance top-ups).
-	GetUserBalanceHistory(ctx context.Context, userID int64, page, pageSize int, codeType string) ([]RedeemCode, int64, float64, error)
+	// Also returns cumulative paid and gifted totals from the user record.
+	GetUserBalanceHistory(ctx context.Context, userID int64, page, pageSize int, codeType string) ([]RedeemCode, int64, float64, float64, error)
 	BindUserAuthIdentity(ctx context.Context, userID int64, input AdminBindAuthIdentityInput) (*AdminBoundAuthIdentity, error)
 
 	// Group management
@@ -195,6 +195,7 @@ type CreateGroupInput struct {
 	RateMultiplier   float64
 	IsExclusive      bool
 	SubscriptionType string   // standard/subscription
+	BalanceTier      string   // free/plus
 	DailyLimitUSD    *float64 // 日限额 (USD)
 	WeeklyLimitUSD   *float64 // 周限额 (USD)
 	MonthlyLimitUSD  *float64 // 月限额 (USD)
@@ -236,6 +237,7 @@ type UpdateGroupInput struct {
 	IsExclusive      *bool
 	Status           string
 	SubscriptionType string   // standard/subscription
+	BalanceTier      *string  // nil 表示未提供不改动
 	DailyLimitUSD    *float64 // 日限额 (USD)
 	WeeklyLimitUSD   *float64 // 周限额 (USD)
 	MonthlyLimitUSD  *float64 // 月限额 (USD)
@@ -403,12 +405,13 @@ type UpdateProxyInput struct {
 }
 
 type GenerateRedeemCodesInput struct {
-	Count        int
-	Type         string
-	Value        float64
-	GroupID      *int64 // 订阅类型专用：关联的分组ID
-	ValidityDays int    // 订阅类型专用：有效天数
-	ExpiresAt    *time.Time
+	Count         int
+	Type          string
+	Value         float64
+	BalanceSource string
+	GroupID       *int64 // 订阅类型专用：关联的分组ID
+	ValidityDays  int    // 订阅类型专用：有效天数
+	ExpiresAt     *time.Time
 }
 
 type ProxyBatchDeleteResult struct {
@@ -693,6 +696,8 @@ func (s *adminServiceImpl) CreateUser(ctx context.Context, input *CreateUserInpu
 		Notes:         input.Notes,
 		Role:          RoleUser, // Always create as regular user, never admin
 		Balance:       balance,
+		GiftBalance:   balance,
+		TotalGifted:   balance,
 		Concurrency:   input.Concurrency,
 		RPMLimit:      input.RPMLimit,
 		Status:        StatusActive,
@@ -877,11 +882,12 @@ func (s *adminServiceImpl) BatchUpdateConcurrency(ctx context.Context, userIDs [
 	return affected, nil
 }
 
-func (s *adminServiceImpl) UpdateUserBalance(ctx context.Context, userID int64, balance float64, operation string, notes string) (*User, error) {
+func (s *adminServiceImpl) UpdateUserBalance(ctx context.Context, userID int64, balance float64, operation string, notes string, balanceSource string) (*User, error) {
 	user, err := s.userRepo.GetByID(ctx, userID)
 	if err != nil {
 		return nil, err
 	}
+	source := normalizeBalanceSourceOrPaid(balanceSource)
 
 	oldBalance := user.Balance
 
@@ -898,10 +904,22 @@ func (s *adminServiceImpl) UpdateUserBalance(ctx context.Context, userID int64, 
 		return nil, fmt.Errorf("balance cannot be negative, current balance: %.2f, requested operation would result in: %.2f", oldBalance, user.Balance)
 	}
 
+	balanceDiff := user.Balance - oldBalance
+	if operation == "set" {
+		if balanceDiff > 0 {
+			applyBalanceSourceTotals(user, balanceDiff, source)
+		}
+		clampUserBalanceBuckets(user)
+	} else {
+		applyBalanceBucketAdjustment(user, balanceDiff, source)
+		if balanceDiff < 0 {
+			clampUserBalanceBuckets(user)
+		}
+	}
+
 	if err := s.userRepo.Update(ctx, user); err != nil {
 		return nil, err
 	}
-	balanceDiff := user.Balance - oldBalance
 	if s.authCacheInvalidator != nil && balanceDiff != 0 {
 		s.authCacheInvalidator.InvalidateAuthCacheByUserID(ctx, userID)
 	}
@@ -924,12 +942,13 @@ func (s *adminServiceImpl) UpdateUserBalance(ctx context.Context, userID int64, 
 		}
 
 		adjustmentRecord := &RedeemCode{
-			Code:   code,
-			Type:   AdjustmentTypeAdminBalance,
-			Value:  balanceDiff,
-			Status: StatusUsed,
-			UsedBy: &user.ID,
-			Notes:  notes,
+			Code:          code,
+			Type:          AdjustmentTypeAdminBalance,
+			Value:         balanceDiff,
+			BalanceSource: source,
+			Status:        StatusUsed,
+			UsedBy:        &user.ID,
+			Notes:         notes,
 		}
 		now := time.Now()
 		adjustmentRecord.UsedAt = &now
@@ -1038,38 +1057,45 @@ func (s *adminServiceImpl) GetUserUsageStats(ctx context.Context, userID int64, 
 }
 
 // GetUserBalanceHistory returns paginated balance/concurrency change records for a user.
-func (s *adminServiceImpl) GetUserBalanceHistory(ctx context.Context, userID int64, page, pageSize int, codeType string) ([]RedeemCode, int64, float64, error) {
+func (s *adminServiceImpl) GetUserBalanceHistory(ctx context.Context, userID int64, page, pageSize int, codeType string) ([]RedeemCode, int64, float64, float64, error) {
 	params := pagination.PaginationParams{Page: page, PageSize: pageSize}
+	totalRecharged, totalGifted, err := s.getUserBalanceTotals(ctx, userID)
+	if err != nil {
+		return nil, 0, 0, 0, err
+	}
 	if codeType == RedeemTypeAffiliateBalance {
 		codes, total, err := s.listAffiliateBalanceHistory(ctx, userID, params)
 		if err != nil {
-			return nil, 0, 0, err
+			return nil, 0, 0, 0, err
 		}
-		totalRecharged, err := s.redeemCodeRepo.SumPositiveBalanceByUser(ctx, userID)
-		if err != nil {
-			return nil, 0, 0, err
-		}
-		return codes, total, totalRecharged, nil
+		return codes, total, totalRecharged, totalGifted, nil
 	}
 
 	if codeType == "" {
-		return s.getAllUserBalanceHistory(ctx, userID, params)
+		codes, total, err := s.getAllUserBalanceHistory(ctx, userID, params)
+		return codes, total, totalRecharged, totalGifted, err
 	}
 
 	codes, result, err := s.redeemCodeRepo.ListByUserPaginated(ctx, userID, params, codeType)
 	if err != nil {
-		return nil, 0, 0, err
+		return nil, 0, 0, 0, err
 	}
 	total := result.Total
-	// Aggregate total recharged amount (only once, regardless of type filter)
-	totalRecharged, err := s.redeemCodeRepo.SumPositiveBalanceByUser(ctx, userID)
-	if err != nil {
-		return nil, 0, 0, err
-	}
-	return codes, total, totalRecharged, nil
+	return codes, total, totalRecharged, totalGifted, nil
 }
 
-func (s *adminServiceImpl) getAllUserBalanceHistory(ctx context.Context, userID int64, params pagination.PaginationParams) ([]RedeemCode, int64, float64, error) {
+func (s *adminServiceImpl) getUserBalanceTotals(ctx context.Context, userID int64) (float64, float64, error) {
+	user, err := s.userRepo.GetByID(ctx, userID)
+	if err != nil {
+		return 0, 0, err
+	}
+	if user == nil {
+		return 0, 0, ErrUserNotFound
+	}
+	return user.TotalRecharged, user.TotalGifted, nil
+}
+
+func (s *adminServiceImpl) getAllUserBalanceHistory(ctx context.Context, userID int64, params pagination.PaginationParams) ([]RedeemCode, int64, error) {
 	needed := params.Offset() + params.Limit()
 	if needed < params.Limit() {
 		needed = params.Limit()
@@ -1077,19 +1103,15 @@ func (s *adminServiceImpl) getAllUserBalanceHistory(ctx context.Context, userID 
 
 	redeemCodes, redeemTotal, err := s.listRedeemBalanceHistoryForMerge(ctx, userID, needed)
 	if err != nil {
-		return nil, 0, 0, err
+		return nil, 0, err
 	}
 	affiliateCodes, affiliateTotal, err := s.listAffiliateBalanceHistoryForMerge(ctx, userID, needed)
 	if err != nil {
-		return nil, 0, 0, err
+		return nil, 0, err
 	}
 	codes := mergeBalanceHistoryCodes(redeemCodes, affiliateCodes, params)
 
-	totalRecharged, err := s.redeemCodeRepo.SumPositiveBalanceByUser(ctx, userID)
-	if err != nil {
-		return nil, 0, 0, err
-	}
-	return codes, redeemTotal + affiliateTotal, totalRecharged, nil
+	return codes, redeemTotal + affiliateTotal, nil
 }
 
 func (s *adminServiceImpl) listRedeemBalanceHistoryForMerge(ctx context.Context, userID int64, needed int) ([]RedeemCode, int64, error) {
@@ -1689,6 +1711,7 @@ func (s *adminServiceImpl) CreateGroup(ctx context.Context, input *CreateGroupIn
 	if subscriptionType == "" {
 		subscriptionType = SubscriptionTypeStandard
 	}
+	balanceTier := NormalizeGroupBalanceTier(input.BalanceTier)
 
 	// 限额字段：nil/负数 表示"无限制"，0 表示"不允许用量"，正数表示具体限额
 	dailyLimit := normalizeLimit(input.DailyLimitUSD)
@@ -1770,6 +1793,7 @@ func (s *adminServiceImpl) CreateGroup(ctx context.Context, input *CreateGroupIn
 		IsExclusive:                     input.IsExclusive,
 		Status:                          StatusActive,
 		SubscriptionType:                subscriptionType,
+		BalanceTier:                     balanceTier,
 		DailyLimitUSD:                   dailyLimit,
 		WeeklyLimitUSD:                  weeklyLimit,
 		MonthlyLimitUSD:                 monthlyLimit,
@@ -1946,6 +1970,9 @@ func (s *adminServiceImpl) UpdateGroup(ctx context.Context, id int64, input *Upd
 	// 订阅相关字段
 	if input.SubscriptionType != "" {
 		group.SubscriptionType = input.SubscriptionType
+	}
+	if input.BalanceTier != nil {
+		group.BalanceTier = NormalizeGroupBalanceTier(*input.BalanceTier)
 	}
 	// 限额字段：nil/负数 表示"无限制"，0 表示"不允许用量"，正数表示具体限额
 	// 前端始终发送这三个字段，无需 nil 守卫
@@ -3089,6 +3116,7 @@ func (s *adminServiceImpl) GenerateRedeemCodes(ctx context.Context, input *Gener
 	if input.ExpiresAt != nil && !input.ExpiresAt.After(time.Now()) {
 		return nil, ErrRedeemCodeExpired
 	}
+	balanceSource := normalizeBalanceSourceOrPaid(input.BalanceSource)
 
 	// 如果是订阅类型，验证必须有 GroupID
 	if input.Type == RedeemTypeSubscription {
@@ -3112,11 +3140,12 @@ func (s *adminServiceImpl) GenerateRedeemCodes(ctx context.Context, input *Gener
 			return nil, err
 		}
 		code := RedeemCode{
-			Code:      codeValue,
-			Type:      input.Type,
-			Value:     input.Value,
-			Status:    StatusUnused,
-			ExpiresAt: input.ExpiresAt,
+			Code:          codeValue,
+			Type:          input.Type,
+			Value:         input.Value,
+			BalanceSource: balanceSource,
+			Status:        StatusUnused,
+			ExpiresAt:     input.ExpiresAt,
 		}
 		// 订阅类型专用字段
 		if input.Type == RedeemTypeSubscription {

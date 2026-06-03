@@ -65,6 +65,9 @@
           <span class="text-sm font-semibold text-primary-700 dark:text-primary-300">
             ${{ user.balance?.toFixed(2) || '0.00' }}
           </span>
+          <span class="hidden text-xs text-primary-600/80 dark:text-primary-300/80 lg:inline">
+            {{ t('balance.giftShort') }} ${{ balanceSplit.gift.toFixed(2) }}
+          </span>
         </div>
 
         <!-- User Dropdown -->
@@ -112,6 +115,11 @@
                 </div>
                 <div class="text-sm font-semibold text-primary-600 dark:text-primary-400">
                   ${{ user.balance?.toFixed(2) || '0.00' }}
+                </div>
+                <div class="mt-1 text-xs text-gray-500 dark:text-dark-400">
+                  {{ t('balance.paidShort') }} ${{ balanceSplit.paid.toFixed(2) }}
+                  ·
+                  {{ t('balance.giftShort') }} ${{ balanceSplit.gift.toFixed(2) }}
                 </div>
               </div>
 
@@ -222,6 +230,7 @@ import LocaleSwitcher from '@/components/common/LocaleSwitcher.vue'
 import SubscriptionProgressMini from '@/components/common/SubscriptionProgressMini.vue'
 import AnnouncementBell from '@/components/common/AnnouncementBell.vue'
 import Icon from '@/components/icons/Icon.vue'
+import { getBalanceSplit } from '@/utils/balance'
 
 const router = useRouter()
 const route = useRoute()
@@ -232,6 +241,7 @@ const adminSettingsStore = useAdminSettingsStore()
 const onboardingStore = useOnboardingStore()
 
 const user = computed(() => authStore.user)
+const balanceSplit = computed(() => getBalanceSplit(user.value))
 const dropdownOpen = ref(false)
 const dropdownRef = ref<HTMLElement | null>(null)
 const contactInfo = computed(() => appStore.contactInfo)

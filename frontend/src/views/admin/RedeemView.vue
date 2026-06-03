@@ -311,6 +311,21 @@
                 {{ t('admin.redeem.invitationHint') }}
               </p>
             </div>
+            <div v-if="generateForm.type === 'balance'">
+              <label class="input-label">{{ t('balance.balanceSource') }}</label>
+              <div class="grid grid-cols-2 gap-2">
+                <label
+                  v-for="option in balanceSourceOptions"
+                  :key="option.value"
+                  class="flex cursor-pointer items-center gap-2 rounded-lg border px-3 py-2 text-sm transition-colors"
+                  :class="generateForm.balance_source === option.value ? 'border-primary-500 bg-primary-50 text-primary-700 dark:border-primary-400 dark:bg-primary-900/20 dark:text-primary-300' : 'border-gray-200 text-gray-700 hover:bg-gray-50 dark:border-dark-600 dark:text-gray-300 dark:hover:bg-dark-700'"
+                >
+                  <input v-model="generateForm.balance_source" type="radio" class="sr-only" :value="option.value" />
+                  <span class="h-2.5 w-2.5 rounded-full" :class="option.value === 'paid' ? 'bg-emerald-500' : 'bg-sky-500'"></span>
+                  <span>{{ option.label }}</span>
+                </label>
+              </div>
+            </div>
             <!-- 订阅类型：显示分组选择和有效天数 -->
             <template v-if="generateForm.type === 'subscription'">
               <div>
@@ -622,6 +637,7 @@ import type {
   Group,
   GroupPlatform,
   SubscriptionType,
+  BalanceSource,
   BatchUpdateRedeemCodeFields
 } from '@/types'
 import type { Column } from '@/components/common/types'
@@ -827,10 +843,16 @@ const redeemCodeExpiryOptions = computed<{ value: RedeemCodeExpiryOption; label:
   { value: 'custom', label: t('admin.redeem.customExpiry') }
 ])
 
+const balanceSourceOptions = computed(() => [
+  { value: 'paid' as BalanceSource, label: t('balance.paidRecharge') },
+  { value: 'gift' as BalanceSource, label: t('balance.giftGrant') }
+])
+
 const generateForm = reactive({
   type: 'balance' as RedeemCodeType,
   value: 10,
   count: 1,
+  balance_source: 'paid' as BalanceSource,
   group_id: null as number | null,
   validity_days: 30,
   expiry_option: 'never' as RedeemCodeExpiryOption,
@@ -1038,7 +1060,8 @@ const handleGenerateCodes = async () => {
       generateForm.value,
       generateForm.type === 'subscription' ? generateForm.group_id : undefined,
       generateForm.type === 'subscription' ? generateForm.validity_days : undefined,
-      expiresInDays
+      expiresInDays,
+      generateForm.type === 'balance' ? generateForm.balance_source : undefined
     )
     showGenerateDialog.value = false
     generatedCodes.value = result
@@ -1046,6 +1069,7 @@ const handleGenerateCodes = async () => {
     // 重置表单
     generateForm.group_id = null
     generateForm.validity_days = 30
+    generateForm.balance_source = 'paid'
     generateForm.expiry_option = 'never'
     generateForm.custom_expiry_days = 7
     loadCodes()

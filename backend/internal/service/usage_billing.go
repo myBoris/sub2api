@@ -33,6 +33,7 @@ type UsageBillingCommand struct {
 	CacheReadTokens     int
 	ImageCount          int
 	MediaType           string
+	GroupBalanceTier    string
 
 	BalanceCost         float64
 	SubscriptionCost    float64
@@ -46,6 +47,7 @@ func (c *UsageBillingCommand) Normalize() {
 		return
 	}
 	c.RequestID = strings.TrimSpace(c.RequestID)
+	c.GroupBalanceTier = NormalizeGroupBalanceTier(c.GroupBalanceTier)
 	if strings.TrimSpace(c.RequestFingerprint) == "" {
 		c.RequestFingerprint = buildUsageBillingFingerprint(c)
 	}
@@ -56,7 +58,7 @@ func buildUsageBillingFingerprint(c *UsageBillingCommand) string {
 		return ""
 	}
 	raw := fmt.Sprintf(
-		"%d|%d|%d|%s|%s|%s|%s|%d|%d|%d|%d|%d|%d|%s|%d|%0.10f|%0.10f|%0.10f|%0.10f|%0.10f",
+		"%d|%d|%d|%s|%s|%s|%s|%d|%d|%d|%d|%d|%d|%s|%s|%d|%0.10f|%0.10f|%0.10f|%0.10f|%0.10f",
 		c.UserID,
 		c.AccountID,
 		c.APIKeyID,
@@ -71,6 +73,7 @@ func buildUsageBillingFingerprint(c *UsageBillingCommand) string {
 		c.CacheReadTokens,
 		c.ImageCount,
 		strings.TrimSpace(c.MediaType),
+		NormalizeGroupBalanceTier(c.GroupBalanceTier),
 		valueOrZero(c.SubscriptionID),
 		c.BalanceCost,
 		c.SubscriptionCost,

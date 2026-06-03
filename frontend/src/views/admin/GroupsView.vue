@@ -131,6 +131,21 @@
                     : t("admin.groups.subscription.standard")
                 }}
               </span>
+              <span
+                v-if="row.subscription_type !== 'subscription'"
+                :class="[
+                  'ml-1 inline-block rounded-full px-2 py-0.5 text-xs font-medium',
+                  row.balance_tier === 'plus'
+                    ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300'
+                    : 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300',
+                ]"
+              >
+                {{
+                  row.balance_tier === "plus"
+                    ? t("admin.groups.balanceTier.plus")
+                    : t("admin.groups.balanceTier.free")
+                }}
+              </span>
               <!-- Subscription Limits - compact single line -->
               <div
                 v-if="row.subscription_type === 'subscription'"
@@ -596,6 +611,18 @@
             />
             <p class="input-hint">
               {{ t("admin.groups.subscription.typeHint") }}
+            </p>
+          </div>
+          <div class="mt-4" v-if="createForm.subscription_type !== 'subscription'">
+            <label class="input-label">{{
+              t("admin.groups.balanceTier.title")
+            }}</label>
+            <Select
+              v-model="createForm.balance_tier"
+              :options="balanceTierOptions"
+            />
+            <p class="input-hint">
+              {{ t("admin.groups.balanceTier.hint") }}
             </p>
           </div>
 
@@ -1886,6 +1913,18 @@
               {{ t("admin.groups.subscription.typeNotEditable") }}
             </p>
           </div>
+          <div class="mt-4" v-if="editForm.subscription_type !== 'subscription'">
+            <label class="input-label">{{
+              t("admin.groups.balanceTier.title")
+            }}</label>
+            <Select
+              v-model="editForm.balance_tier"
+              :options="balanceTierOptions"
+            />
+            <p class="input-hint">
+              {{ t("admin.groups.balanceTier.hint") }}
+            </p>
+          </div>
 
           <!-- Subscription limits (only show when subscription type is selected) -->
           <div
@@ -3042,7 +3081,7 @@ import { useI18n } from "vue-i18n";
 import { useAppStore } from "@/stores/app";
 import { useOnboardingStore } from "@/stores/onboarding";
 import { adminAPI } from "@/api/admin";
-import type { AdminGroup, GroupPlatform, SubscriptionType } from "@/types";
+import type { AdminGroup, GroupBalanceTier, GroupPlatform, SubscriptionType } from "@/types";
 import type { Column } from "@/components/common/types";
 import AppLayout from "@/components/layout/AppLayout.vue";
 import TablePageLayout from "@/components/layout/TablePageLayout.vue";
@@ -3156,6 +3195,11 @@ const editStatusOptions = computed(() => [
 const subscriptionTypeOptions = computed(() => [
   { value: "standard", label: t("admin.groups.subscription.standard") },
   { value: "subscription", label: t("admin.groups.subscription.subscription") },
+]);
+
+const balanceTierOptions = computed(() => [
+  { value: "free", label: t("admin.groups.balanceTier.free") },
+  { value: "plus", label: t("admin.groups.balanceTier.plus") },
 ]);
 
 // 降级分组选项（创建时）- 仅包含 anthropic 平台且未启用 claude_code_only 的分组
@@ -3330,6 +3374,7 @@ const createForm = reactive({
   rate_multiplier: 1.0,
   is_exclusive: false,
   subscription_type: "standard" as SubscriptionType,
+  balance_tier: "free" as GroupBalanceTier,
   daily_limit_usd: null as number | null,
   weekly_limit_usd: null as number | null,
   monthly_limit_usd: null as number | null,
@@ -3661,6 +3706,7 @@ const editForm = reactive({
   is_exclusive: false,
   status: "active" as "active" | "inactive",
   subscription_type: "standard" as SubscriptionType,
+  balance_tier: "free" as GroupBalanceTier,
   daily_limit_usd: null as number | null,
   weekly_limit_usd: null as number | null,
   monthly_limit_usd: null as number | null,
@@ -3913,6 +3959,7 @@ const closeCreateModal = () => {
   createForm.rate_multiplier = 1.0;
   createForm.is_exclusive = false;
   createForm.subscription_type = "standard";
+  createForm.balance_tier = "free";
   createForm.daily_limit_usd = null;
   createForm.weekly_limit_usd = null;
   createForm.monthly_limit_usd = null;
@@ -4039,6 +4086,7 @@ const handleEdit = async (group: AdminGroup) => {
   editForm.is_exclusive = group.is_exclusive;
   editForm.status = group.status;
   editForm.subscription_type = group.subscription_type || "standard";
+  editForm.balance_tier = group.balance_tier || "free";
   editForm.daily_limit_usd = group.daily_limit_usd;
   editForm.weekly_limit_usd = group.weekly_limit_usd;
   editForm.monthly_limit_usd = group.monthly_limit_usd;

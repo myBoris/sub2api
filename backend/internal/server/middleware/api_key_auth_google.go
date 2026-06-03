@@ -105,8 +105,12 @@ func APIKeyAuthWithSubscriptionGoogle(apiKeyService *service.APIKeyService, subs
 				subscriptionService.DoWindowMaintenance(&maintenanceCopy)
 			}
 		} else {
-			if apiKey.User.Balance <= 0 {
-				abortWithGoogleError(c, 403, "Insufficient account balance")
+			if apiKey.Group != nil && apiKey.Group.IsPlusBalanceTier() && apiKey.User.PaidBalance <= 0 {
+				abortWithGoogleError(c, 403, "Insufficient paid balance for plus group")
+				return
+			}
+			if (apiKey.Group == nil || !apiKey.Group.IsPlusBalanceTier()) && apiKey.User.GiftBalance <= 0 {
+				abortWithGoogleError(c, 403, "Insufficient gift balance for free group")
 				return
 			}
 		}

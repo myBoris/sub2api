@@ -36,6 +36,8 @@ const (
 	FieldPlatform = "platform"
 	// FieldSubscriptionType holds the string denoting the subscription_type field in the database.
 	FieldSubscriptionType = "subscription_type"
+	// FieldBalanceTier holds the string denoting the balance_tier field in the database.
+	FieldBalanceTier = "balance_tier"
 	// FieldDailyLimitUsd holds the string denoting the daily_limit_usd field in the database.
 	FieldDailyLimitUsd = "daily_limit_usd"
 	// FieldWeeklyLimitUsd holds the string denoting the weekly_limit_usd field in the database.
@@ -171,6 +173,7 @@ var Columns = []string{
 	FieldStatus,
 	FieldPlatform,
 	FieldSubscriptionType,
+	FieldBalanceTier,
 	FieldDailyLimitUsd,
 	FieldWeeklyLimitUsd,
 	FieldMonthlyLimitUsd,
@@ -249,6 +252,10 @@ var (
 	DefaultSubscriptionType string
 	// SubscriptionTypeValidator is a validator for the "subscription_type" field. It is called by the builders before save.
 	SubscriptionTypeValidator func(string) error
+	// DefaultBalanceTier holds the default value on creation for the "balance_tier" field.
+	DefaultBalanceTier string
+	// BalanceTierValidator is a validator for the "balance_tier" field. It is called by the builders before save.
+	BalanceTierValidator func(string) error
 	// DefaultDefaultValidityDays holds the default value on creation for the "default_validity_days" field.
 	DefaultDefaultValidityDays int
 	// DefaultAllowImageGeneration holds the default value on creation for the "allow_image_generation" field.
@@ -341,6 +348,11 @@ func ByPlatform(opts ...sql.OrderTermOption) OrderOption {
 // BySubscriptionType orders the results by the subscription_type field.
 func BySubscriptionType(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldSubscriptionType, opts...).ToFunc()
+}
+
+// ByBalanceTier orders the results by the balance_tier field.
+func ByBalanceTier(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldBalanceTier, opts...).ToFunc()
 }
 
 // ByDailyLimitUsd orders the results by the daily_limit_usd field.

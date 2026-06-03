@@ -124,7 +124,7 @@ func (s *PromoService) ApplyPromoCode(ctx context.Context, userID int64, code st
 	}
 
 	// 增加用户余额
-	if err := s.userRepo.UpdateBalance(txCtx, userID, promoCode.BonusAmount); err != nil {
+	if err := updateUserBalanceWithSource(txCtx, s.userRepo, userID, promoCode.BonusAmount, BalanceSourceGift); err != nil {
 		return fmt.Errorf("update user balance: %w", err)
 	}
 

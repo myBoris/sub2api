@@ -1,6 +1,7 @@
 package schema
 
 import (
+	"fmt"
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/domain"
@@ -45,6 +46,17 @@ func (RedeemCode) Fields() []ent.Field {
 		field.Float("value").
 			SchemaType(map[string]string{dialect.Postgres: "decimal(20,8)"}).
 			Default(0),
+		field.String("balance_source").
+			MaxLen(20).
+			Validate(func(value string) error {
+				switch value {
+				case domain.BalanceSourcePaid, domain.BalanceSourceGift:
+					return nil
+				default:
+					return fmt.Errorf("must be one of paid, gift")
+				}
+			}).
+			Default(domain.BalanceSourcePaid),
 		field.String("status").
 			MaxLen(20).
 			Default(domain.StatusUnused),

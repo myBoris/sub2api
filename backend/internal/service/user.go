@@ -19,6 +19,8 @@ type User struct {
 	PasswordHash   string
 	Role           string
 	Balance        float64
+	PaidBalance    float64
+	GiftBalance    float64
 	Concurrency    int
 	Status         string
 	AllowedGroups  []int64
@@ -49,6 +51,7 @@ type User struct {
 	BalanceNotifyThreshold     *float64
 	BalanceNotifyExtraEmails   []NotifyEmailEntry
 	TotalRecharged             float64
+	TotalGifted                float64
 
 	// RPMLimit 用户级每分钟请求数上限（0 = 不限制）。仅在所用分组未设置 rpm_limit
 	// 且该 (用户, 分组) 无 rpm_override 时作为全局兜底生效，计数键 rpm:u:{userID}:{min}。

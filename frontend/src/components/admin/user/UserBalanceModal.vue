@@ -3,7 +3,30 @@
     <form v-if="user" id="balance-form" @submit.prevent="handleBalanceSubmit" class="space-y-5">
       <div class="flex items-center gap-3 rounded-xl bg-gray-50 p-4 dark:bg-dark-700">
         <div class="flex h-10 w-10 items-center justify-center rounded-full bg-primary-100"><span class="text-lg font-medium text-primary-700">{{ user.email.charAt(0).toUpperCase() }}</span></div>
-        <div class="flex-1"><p class="font-medium text-gray-900">{{ user.email }}</p><p class="text-sm text-gray-500">{{ t('admin.users.currentBalance') }}: ${{ formatBalance(user.balance) }}</p></div>
+        <div class="flex-1">
+          <p class="font-medium text-gray-900">{{ user.email }}</p>
+          <p class="text-sm text-gray-500">{{ t('admin.users.currentBalance') }}: ${{ formatBalance(user.balance) }}</p>
+          <p class="text-xs text-gray-500 dark:text-dark-400">
+            {{ t('balance.paidBalance') }}: ${{ formatBalance(balanceSplit.paid) }}
+            ·
+            {{ t('balance.giftBalance') }}: ${{ formatBalance(balanceSplit.gift) }}
+          </p>
+        </div>
+      </div>
+      <div v-if="operation === 'add'">
+        <label class="input-label">{{ t('balance.balanceSource') }}</label>
+        <div class="grid grid-cols-2 gap-2">
+          <label
+            v-for="option in balanceSourceOptions"
+            :key="option.value"
+            class="flex cursor-pointer items-center gap-2 rounded-lg border px-3 py-2 text-sm transition-colors"
+            :class="form.balanceSource === option.value ? 'border-primary-500 bg-primary-50 text-primary-700 dark:border-primary-400 dark:bg-primary-900/20 dark:text-primary-300' : 'border-gray-200 text-gray-700 hover:bg-gray-50 dark:border-dark-600 dark:text-gray-300 dark:hover:bg-dark-700'"
+          >
+            <input v-model="form.balanceSource" type="radio" class="sr-only" :value="option.value" />
+            <span class="h-2.5 w-2.5 rounded-full" :class="option.value === 'paid' ? 'bg-emerald-500' : 'bg-sky-500'"></span>
+            <span>{{ option.label }}</span>
+          </label>
+        </div>
       </div>
       <div>
         <label class="input-label">{{ operation === 'add' ? t('admin.users.depositAmount') : t('admin.users.withdrawAmount') }}</label>
@@ -25,29 +48,30 @@
 </template>
 
 <script setup lang="ts">
-import { reactive, ref, watch } from 'vue'
+import { computed, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useAppStore } from '@/stores/app'
 import { adminAPI } from '@/api/admin'
-import type { AdminUser } from '@/types'
+import type { AdminUser, BalanceSource } from '@/types'
+import { formatBalanceAmount, getBalanceSplit } from '@/utils/balance'
 import BaseDialog from '@/components/common/BaseDialog.vue'
 
 const props = defineProps<{ show: boolean, user: AdminUser | null, operation: 'add' | 'subtract' }>()
 const emit = defineEmits(['close', 'success']); const { t } = useI18n(); const appStore = useAppStore()
 
-const submitting = ref(false); const form = reactive({ amount: 0, notes: '' })
-watch(() => props.show, (v) => { if(v) { form.amount = 0; form.notes = '' } })
+const submitting = ref(false); const form = reactive<{ amount: number; notes: string; balanceSource: BalanceSource }>({ amount: 0, notes: '', balanceSource: 'paid' })
+watch(() => props.show, (v) => { if(v) { form.amount = 0; form.notes = ''; form.balanceSource = 'paid' } })
+
+const balanceSourceOptions = computed(() => [
+  { value: 'paid' as BalanceSource, label: t('balance.paidRecharge') },
+  { value: 'gift' as BalanceSource, label: t('balance.giftGrant') }
+])
+
+const balanceSplit = computed(() => getBalanceSplit(props.user))
 
 // 格式化余额：显示完整精度，去除尾部多余的0
 const formatBalance = (value: number) => {
-  if (value === 0) return '0.00'
-  // 最多保留8位小数，去除尾部的0
-  const formatted = value.toFixed(8).replace(/\.?0+$/, '')
-  // 确保至少有2位小数
-  const parts = formatted.split('.')
-  if (parts.length === 1) return formatted + '.00'
-  if (parts[1].length === 1) return formatted + '0'
-  return formatted
+  return formatBalanceAmount(value)
 }
 
 // 填入全部余额
@@ -76,7 +100,7 @@ const handleBalanceSubmit = async () => {
   }
   submitting.value = true
   try {
-    await adminAPI.users.updateBalance(props.user.id, form.amount, props.operation, form.notes)
+    await adminAPI.users.updateBalance(props.user.id, form.amount, props.operation, form.notes, props.operation === 'add' ? form.balanceSource : undefined)
     appStore.showSuccess(t('common.success')); emit('success'); emit('close')
   } catch (e: any) {
     console.error('Failed to update balance:', e)

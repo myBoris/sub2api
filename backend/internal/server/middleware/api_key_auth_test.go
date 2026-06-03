@@ -35,6 +35,7 @@ func TestSimpleModeBypassesQuotaCheck(t *testing.T) {
 		Role:        service.RoleUser,
 		Status:      service.StatusActive,
 		Balance:     10,
+		GiftBalance: 10,
 		Concurrency: 3,
 	}
 	apiKey := &service.APIKey{
@@ -192,6 +193,7 @@ func TestAPIKeyAuthSetsGroupContext(t *testing.T) {
 		Role:        service.RoleUser,
 		Status:      service.StatusActive,
 		Balance:     10,
+		GiftBalance: 10,
 		Concurrency: 3,
 	}
 	apiKey := &service.APIKey{

@@ -4,7 +4,7 @@
  */
 
 import { apiClient } from '../client'
-import type { AdminUser, UpdateUserRequest, PaginatedResponse, ApiKey } from '@/types'
+import type { AdminUser, UpdateUserRequest, PaginatedResponse, ApiKey, BalanceSource } from '@/types'
 
 export interface AdminBindAuthIdentityChannelRequest {
   channel: string
@@ -161,12 +161,14 @@ export async function updateBalance(
   id: number,
   balance: number,
   operation: 'set' | 'add' | 'subtract' = 'set',
-  notes?: string
+  notes?: string,
+  balanceSource?: BalanceSource
 ): Promise<AdminUser> {
   const { data } = await apiClient.post<AdminUser>(`/admin/users/${id}/balance`, {
     balance,
     operation,
-    notes: notes || ''
+    notes: notes || '',
+    balance_source: balanceSource
   })
   return data
 }
@@ -233,6 +235,7 @@ export interface BalanceHistoryItem {
   code: string
   type: string
   value: number
+  balance_source?: BalanceSource
   status: string
   used_by: number | null
   used_at: string | null
@@ -247,6 +250,7 @@ export interface BalanceHistoryItem {
 // Balance history response extends pagination with total_recharged summary
 export interface BalanceHistoryResponse extends PaginatedResponse<BalanceHistoryItem> {
   total_recharged: number
+  total_gifted: number
 }
 
 /**

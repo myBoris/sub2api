@@ -89,6 +89,10 @@ func (r *userRepository) Create(ctx context.Context, userIn *service.User) error
 		SetPasswordHash(userIn.PasswordHash).
 		SetRole(userIn.Role).
 		SetBalance(userIn.Balance).
+		SetPaidBalance(userIn.PaidBalance).
+		SetGiftBalance(userIn.GiftBalance).
+		SetTotalRecharged(userIn.TotalRecharged).
+		SetTotalGifted(userIn.TotalGifted).
 		SetConcurrency(userIn.Concurrency).
 		SetStatus(userIn.Status).
 		SetSignupSource(userSignupSourceOrDefault(userIn.SignupSource)).
@@ -232,6 +236,8 @@ func (r *userRepository) Update(ctx context.Context, userIn *service.User) error
 		SetPasswordHash(userIn.PasswordHash).
 		SetRole(userIn.Role).
 		SetBalance(userIn.Balance).
+		SetPaidBalance(userIn.PaidBalance).
+		SetGiftBalance(userIn.GiftBalance).
 		SetConcurrency(userIn.Concurrency).
 		SetStatus(userIn.Status).
 		SetBalanceNotifyEnabled(userIn.BalanceNotifyEnabled).
@@ -239,6 +245,7 @@ func (r *userRepository) Update(ctx context.Context, userIn *service.User) error
 		SetNillableBalanceNotifyThreshold(userIn.BalanceNotifyThreshold).
 		SetBalanceNotifyExtraEmails(marshalExtraEmails(userIn.BalanceNotifyExtraEmails)).
 		SetTotalRecharged(userIn.TotalRecharged).
+		SetTotalGifted(userIn.TotalGifted).
 		SetRpmLimit(userIn.RPMLimit)
 	if userIn.SignupSource != "" {
 		updateOp = updateOp.SetSignupSource(userIn.SignupSource)
@@ -716,11 +723,24 @@ func (r *userRepository) filterUsersByAttributes(ctx context.Context, attrs map[
 }
 
 func (r *userRepository) UpdateBalance(ctx context.Context, id int64, amount float64) error {
+	return r.UpdateBalanceWithSource(ctx, id, amount, service.BalanceSourcePaid)
+}
+
+func (r *userRepository) UpdateBalanceWithSource(ctx context.Context, id int64, amount float64, source string) error {
+	if amount < 0 {
+		return r.DeductBalanceWithTier(ctx, id, -amount, service.GroupBalanceTierFree)
+	}
 	client := clientFromContext(ctx, r.client)
 	update := client.User.Update().Where(dbuser.IDEQ(id)).AddBalance(amount)
-	// Track cumulative recharge amount for percentage-based notifications
 	if amount > 0 {
-		update = update.AddTotalRecharged(amount)
+		switch source {
+		case service.BalanceSourceGift:
+			update = update.AddTotalGifted(amount)
+			update = update.AddGiftBalance(amount)
+		default:
+			update = update.AddTotalRecharged(amount)
+			update = update.AddPaidBalance(amount)
+		}
 	}
 	n, err := update.Save(ctx)
 	if err != nil {
@@ -736,18 +756,49 @@ func (r *userRepository) UpdateBalance(ctx context.Context, id int64, amount flo
 // 透支策略：允许余额变为负数，确保当前请求能够完成
 // 中间件会阻止余额 <= 0 的用户发起后续请求
 func (r *userRepository) DeductBalance(ctx context.Context, id int64, amount float64) error {
-	client := clientFromContext(ctx, r.client)
-	n, err := client.User.Update().
-		Where(dbuser.IDEQ(id)).
-		AddBalance(-amount).
-		Save(ctx)
+	return r.DeductBalanceWithTier(ctx, id, amount, service.GroupBalanceTierFree)
+}
+
+func (r *userRepository) DeductBalanceWithTier(ctx context.Context, id int64, amount float64, tier string) error {
+	exec := txAwareSQLExecutor(ctx, r.sql, r.client)
+	if exec == nil {
+		return fmt.Errorf("sql executor is not configured")
+	}
+
+	query := `
+		UPDATE users
+		SET balance = balance - $1,
+			gift_balance = gift_balance - $1,
+			updated_at = NOW()
+		WHERE id = $2 AND deleted_at IS NULL
+		RETURNING id
+	`
+	if service.NormalizeGroupBalanceTier(tier) == service.GroupBalanceTierPlus {
+		query = `
+			UPDATE users
+			SET balance = balance - $1,
+				paid_balance = paid_balance - $1,
+				updated_at = NOW()
+			WHERE id = $2 AND deleted_at IS NULL
+			RETURNING id
+		`
+	}
+	rows, err := exec.QueryContext(ctx, query, amount, id)
 	if err != nil {
+		return translatePersistenceError(err, service.ErrUserNotFound, nil)
+	}
+	defer func() { _ = rows.Close() }()
+	if rows.Next() {
+		var updatedID int64
+		if err := rows.Scan(&updatedID); err != nil {
+			return err
+		}
+		return rows.Err()
+	}
+	if err := rows.Err(); err != nil {
 		return err
 	}
-	if n == 0 {
-		return service.ErrUserNotFound
-	}
-	return nil
+	return service.ErrUserNotFound
 }
 
 func (r *userRepository) UpdateConcurrency(ctx context.Context, id int64, amount int) error {

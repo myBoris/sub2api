@@ -21,6 +21,7 @@ type Group struct {
 	Hydrated       bool // indicates the group was loaded from a trusted repository source
 
 	SubscriptionType    string
+	BalanceTier         string
 	DailyLimitUSD       *float64
 	WeeklyLimitUSD      *float64
 	MonthlyLimitUSD     *float64
@@ -83,6 +84,10 @@ func (g *Group) IsActive() bool {
 
 func (g *Group) IsSubscriptionType() bool {
 	return g.SubscriptionType == SubscriptionTypeSubscription
+}
+
+func (g *Group) IsPlusBalanceTier() bool {
+	return g != nil && NormalizeGroupBalanceTier(g.BalanceTier) == GroupBalanceTierPlus
 }
 
 func (g *Group) HasDailyLimit() bool {

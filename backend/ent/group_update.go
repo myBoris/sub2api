@@ -173,6 +173,20 @@ func (_u *GroupUpdate) SetNillableSubscriptionType(v *string) *GroupUpdate {
 	return _u
 }
 
+// SetBalanceTier sets the "balance_tier" field.
+func (_u *GroupUpdate) SetBalanceTier(v string) *GroupUpdate {
+	_u.mutation.SetBalanceTier(v)
+	return _u
+}
+
+// SetNillableBalanceTier sets the "balance_tier" field if the given value is not nil.
+func (_u *GroupUpdate) SetNillableBalanceTier(v *string) *GroupUpdate {
+	if v != nil {
+		_u.SetBalanceTier(*v)
+	}
+	return _u
+}
+
 // SetDailyLimitUsd sets the "daily_limit_usd" field.
 func (_u *GroupUpdate) SetDailyLimitUsd(v float64) *GroupUpdate {
 	_u.mutation.ResetDailyLimitUsd()
@@ -936,6 +950,11 @@ func (_u *GroupUpdate) check() error {
 			return &ValidationError{Name: "subscription_type", err: fmt.Errorf(`ent: validator failed for field "Group.subscription_type": %w`, err)}
 		}
 	}
+	if v, ok := _u.mutation.BalanceTier(); ok {
+		if err := group.BalanceTierValidator(v); err != nil {
+			return &ValidationError{Name: "balance_tier", err: fmt.Errorf(`ent: validator failed for field "Group.balance_tier": %w`, err)}
+		}
+	}
 	if v, ok := _u.mutation.DefaultMappedModel(); ok {
 		if err := group.DefaultMappedModelValidator(v); err != nil {
 			return &ValidationError{Name: "default_mapped_model", err: fmt.Errorf(`ent: validator failed for field "Group.default_mapped_model": %w`, err)}
@@ -991,6 +1010,9 @@ func (_u *GroupUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 	}
 	if value, ok := _u.mutation.SubscriptionType(); ok {
 		_spec.SetField(group.FieldSubscriptionType, field.TypeString, value)
+	}
+	if value, ok := _u.mutation.BalanceTier(); ok {
+		_spec.SetField(group.FieldBalanceTier, field.TypeString, value)
 	}
 	if value, ok := _u.mutation.DailyLimitUsd(); ok {
 		_spec.SetField(group.FieldDailyLimitUsd, field.TypeFloat64, value)
@@ -1582,6 +1604,20 @@ func (_u *GroupUpdateOne) SetSubscriptionType(v string) *GroupUpdateOne {
 func (_u *GroupUpdateOne) SetNillableSubscriptionType(v *string) *GroupUpdateOne {
 	if v != nil {
 		_u.SetSubscriptionType(*v)
+	}
+	return _u
+}
+
+// SetBalanceTier sets the "balance_tier" field.
+func (_u *GroupUpdateOne) SetBalanceTier(v string) *GroupUpdateOne {
+	_u.mutation.SetBalanceTier(v)
+	return _u
+}
+
+// SetNillableBalanceTier sets the "balance_tier" field if the given value is not nil.
+func (_u *GroupUpdateOne) SetNillableBalanceTier(v *string) *GroupUpdateOne {
+	if v != nil {
+		_u.SetBalanceTier(*v)
 	}
 	return _u
 }
@@ -2362,6 +2398,11 @@ func (_u *GroupUpdateOne) check() error {
 			return &ValidationError{Name: "subscription_type", err: fmt.Errorf(`ent: validator failed for field "Group.subscription_type": %w`, err)}
 		}
 	}
+	if v, ok := _u.mutation.BalanceTier(); ok {
+		if err := group.BalanceTierValidator(v); err != nil {
+			return &ValidationError{Name: "balance_tier", err: fmt.Errorf(`ent: validator failed for field "Group.balance_tier": %w`, err)}
+		}
+	}
 	if v, ok := _u.mutation.DefaultMappedModel(); ok {
 		if err := group.DefaultMappedModelValidator(v); err != nil {
 			return &ValidationError{Name: "default_mapped_model", err: fmt.Errorf(`ent: validator failed for field "Group.default_mapped_model": %w`, err)}
@@ -2434,6 +2475,9 @@ func (_u *GroupUpdateOne) sqlSave(ctx context.Context) (_node *Group, err error)
 	}
 	if value, ok := _u.mutation.SubscriptionType(); ok {
 		_spec.SetField(group.FieldSubscriptionType, field.TypeString, value)
+	}
+	if value, ok := _u.mutation.BalanceTier(); ok {
+		_spec.SetField(group.FieldBalanceTier, field.TypeString, value)
 	}
 	if value, ok := _u.mutation.DailyLimitUsd(); ok {
 		_spec.SetField(group.FieldDailyLimitUsd, field.TypeFloat64, value)

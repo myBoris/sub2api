@@ -129,6 +129,48 @@ func (_u *UserUpdate) AddBalance(v float64) *UserUpdate {
 	return _u
 }
 
+// SetPaidBalance sets the "paid_balance" field.
+func (_u *UserUpdate) SetPaidBalance(v float64) *UserUpdate {
+	_u.mutation.ResetPaidBalance()
+	_u.mutation.SetPaidBalance(v)
+	return _u
+}
+
+// SetNillablePaidBalance sets the "paid_balance" field if the given value is not nil.
+func (_u *UserUpdate) SetNillablePaidBalance(v *float64) *UserUpdate {
+	if v != nil {
+		_u.SetPaidBalance(*v)
+	}
+	return _u
+}
+
+// AddPaidBalance adds value to the "paid_balance" field.
+func (_u *UserUpdate) AddPaidBalance(v float64) *UserUpdate {
+	_u.mutation.AddPaidBalance(v)
+	return _u
+}
+
+// SetGiftBalance sets the "gift_balance" field.
+func (_u *UserUpdate) SetGiftBalance(v float64) *UserUpdate {
+	_u.mutation.ResetGiftBalance()
+	_u.mutation.SetGiftBalance(v)
+	return _u
+}
+
+// SetNillableGiftBalance sets the "gift_balance" field if the given value is not nil.
+func (_u *UserUpdate) SetNillableGiftBalance(v *float64) *UserUpdate {
+	if v != nil {
+		_u.SetGiftBalance(*v)
+	}
+	return _u
+}
+
+// AddGiftBalance adds value to the "gift_balance" field.
+func (_u *UserUpdate) AddGiftBalance(v float64) *UserUpdate {
+	_u.mutation.AddGiftBalance(v)
+	return _u
+}
+
 // SetConcurrency sets the "concurrency" field.
 func (_u *UserUpdate) SetConcurrency(v int) *UserUpdate {
 	_u.mutation.ResetConcurrency()
@@ -387,6 +429,27 @@ func (_u *UserUpdate) SetNillableTotalRecharged(v *float64) *UserUpdate {
 // AddTotalRecharged adds value to the "total_recharged" field.
 func (_u *UserUpdate) AddTotalRecharged(v float64) *UserUpdate {
 	_u.mutation.AddTotalRecharged(v)
+	return _u
+}
+
+// SetTotalGifted sets the "total_gifted" field.
+func (_u *UserUpdate) SetTotalGifted(v float64) *UserUpdate {
+	_u.mutation.ResetTotalGifted()
+	_u.mutation.SetTotalGifted(v)
+	return _u
+}
+
+// SetNillableTotalGifted sets the "total_gifted" field if the given value is not nil.
+func (_u *UserUpdate) SetNillableTotalGifted(v *float64) *UserUpdate {
+	if v != nil {
+		_u.SetTotalGifted(*v)
+	}
+	return _u
+}
+
+// AddTotalGifted adds value to the "total_gifted" field.
+func (_u *UserUpdate) AddTotalGifted(v float64) *UserUpdate {
+	_u.mutation.AddTotalGifted(v)
 	return _u
 }
 
@@ -997,6 +1060,18 @@ func (_u *UserUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 	if value, ok := _u.mutation.AddedBalance(); ok {
 		_spec.AddField(user.FieldBalance, field.TypeFloat64, value)
 	}
+	if value, ok := _u.mutation.PaidBalance(); ok {
+		_spec.SetField(user.FieldPaidBalance, field.TypeFloat64, value)
+	}
+	if value, ok := _u.mutation.AddedPaidBalance(); ok {
+		_spec.AddField(user.FieldPaidBalance, field.TypeFloat64, value)
+	}
+	if value, ok := _u.mutation.GiftBalance(); ok {
+		_spec.SetField(user.FieldGiftBalance, field.TypeFloat64, value)
+	}
+	if value, ok := _u.mutation.AddedGiftBalance(); ok {
+		_spec.AddField(user.FieldGiftBalance, field.TypeFloat64, value)
+	}
 	if value, ok := _u.mutation.Concurrency(); ok {
 		_spec.SetField(user.FieldConcurrency, field.TypeInt, value)
 	}
@@ -1065,6 +1140,12 @@ func (_u *UserUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 	}
 	if value, ok := _u.mutation.AddedTotalRecharged(); ok {
 		_spec.AddField(user.FieldTotalRecharged, field.TypeFloat64, value)
+	}
+	if value, ok := _u.mutation.TotalGifted(); ok {
+		_spec.SetField(user.FieldTotalGifted, field.TypeFloat64, value)
+	}
+	if value, ok := _u.mutation.AddedTotalGifted(); ok {
+		_spec.AddField(user.FieldTotalGifted, field.TypeFloat64, value)
 	}
 	if value, ok := _u.mutation.RpmLimit(); ok {
 		_spec.SetField(user.FieldRpmLimit, field.TypeInt, value)
@@ -1778,6 +1859,48 @@ func (_u *UserUpdateOne) AddBalance(v float64) *UserUpdateOne {
 	return _u
 }
 
+// SetPaidBalance sets the "paid_balance" field.
+func (_u *UserUpdateOne) SetPaidBalance(v float64) *UserUpdateOne {
+	_u.mutation.ResetPaidBalance()
+	_u.mutation.SetPaidBalance(v)
+	return _u
+}
+
+// SetNillablePaidBalance sets the "paid_balance" field if the given value is not nil.
+func (_u *UserUpdateOne) SetNillablePaidBalance(v *float64) *UserUpdateOne {
+	if v != nil {
+		_u.SetPaidBalance(*v)
+	}
+	return _u
+}
+
+// AddPaidBalance adds value to the "paid_balance" field.
+func (_u *UserUpdateOne) AddPaidBalance(v float64) *UserUpdateOne {
+	_u.mutation.AddPaidBalance(v)
+	return _u
+}
+
+// SetGiftBalance sets the "gift_balance" field.
+func (_u *UserUpdateOne) SetGiftBalance(v float64) *UserUpdateOne {
+	_u.mutation.ResetGiftBalance()
+	_u.mutation.SetGiftBalance(v)
+	return _u
+}
+
+// SetNillableGiftBalance sets the "gift_balance" field if the given value is not nil.
+func (_u *UserUpdateOne) SetNillableGiftBalance(v *float64) *UserUpdateOne {
+	if v != nil {
+		_u.SetGiftBalance(*v)
+	}
+	return _u
+}
+
+// AddGiftBalance adds value to the "gift_balance" field.
+func (_u *UserUpdateOne) AddGiftBalance(v float64) *UserUpdateOne {
+	_u.mutation.AddGiftBalance(v)
+	return _u
+}
+
 // SetConcurrency sets the "concurrency" field.
 func (_u *UserUpdateOne) SetConcurrency(v int) *UserUpdateOne {
 	_u.mutation.ResetConcurrency()
@@ -2036,6 +2159,27 @@ func (_u *UserUpdateOne) SetNillableTotalRecharged(v *float64) *UserUpdateOne {
 // AddTotalRecharged adds value to the "total_recharged" field.
 func (_u *UserUpdateOne) AddTotalRecharged(v float64) *UserUpdateOne {
 	_u.mutation.AddTotalRecharged(v)
+	return _u
+}
+
+// SetTotalGifted sets the "total_gifted" field.
+func (_u *UserUpdateOne) SetTotalGifted(v float64) *UserUpdateOne {
+	_u.mutation.ResetTotalGifted()
+	_u.mutation.SetTotalGifted(v)
+	return _u
+}
+
+// SetNillableTotalGifted sets the "total_gifted" field if the given value is not nil.
+func (_u *UserUpdateOne) SetNillableTotalGifted(v *float64) *UserUpdateOne {
+	if v != nil {
+		_u.SetTotalGifted(*v)
+	}
+	return _u
+}
+
+// AddTotalGifted adds value to the "total_gifted" field.
+func (_u *UserUpdateOne) AddTotalGifted(v float64) *UserUpdateOne {
+	_u.mutation.AddTotalGifted(v)
 	return _u
 }
 
@@ -2676,6 +2820,18 @@ func (_u *UserUpdateOne) sqlSave(ctx context.Context) (_node *User, err error) {
 	if value, ok := _u.mutation.AddedBalance(); ok {
 		_spec.AddField(user.FieldBalance, field.TypeFloat64, value)
 	}
+	if value, ok := _u.mutation.PaidBalance(); ok {
+		_spec.SetField(user.FieldPaidBalance, field.TypeFloat64, value)
+	}
+	if value, ok := _u.mutation.AddedPaidBalance(); ok {
+		_spec.AddField(user.FieldPaidBalance, field.TypeFloat64, value)
+	}
+	if value, ok := _u.mutation.GiftBalance(); ok {
+		_spec.SetField(user.FieldGiftBalance, field.TypeFloat64, value)
+	}
+	if value, ok := _u.mutation.AddedGiftBalance(); ok {
+		_spec.AddField(user.FieldGiftBalance, field.TypeFloat64, value)
+	}
 	if value, ok := _u.mutation.Concurrency(); ok {
 		_spec.SetField(user.FieldConcurrency, field.TypeInt, value)
 	}
@@ -2744,6 +2900,12 @@ func (_u *UserUpdateOne) sqlSave(ctx context.Context) (_node *User, err error) {
 	}
 	if value, ok := _u.mutation.AddedTotalRecharged(); ok {
 		_spec.AddField(user.FieldTotalRecharged, field.TypeFloat64, value)
+	}
+	if value, ok := _u.mutation.TotalGifted(); ok {
+		_spec.SetField(user.FieldTotalGifted, field.TypeFloat64, value)
+	}
+	if value, ok := _u.mutation.AddedTotalGifted(); ok {
+		_spec.AddField(user.FieldTotalGifted, field.TypeFloat64, value)
 	}
 	if value, ok := _u.mutation.RpmLimit(); ok {
 		_spec.SetField(user.FieldRpmLimit, field.TypeInt, value)

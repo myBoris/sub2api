@@ -33,17 +33,23 @@
             <p class="text-xl font-bold text-gray-900 dark:text-white">
               ${{ user.balance?.toFixed(2) || '0.00' }}
             </p>
+            <p class="mt-1 text-[11px] text-gray-500 dark:text-dark-400">
+              {{ t('balance.paidShort') }} ${{ formatBalanceAmount(balanceSplit.paid) }}
+              ·
+              {{ t('balance.giftShort') }} ${{ formatBalanceAmount(balanceSplit.gift) }}
+            </p>
           </div>
         </div>
-        <!-- Row 2: notes + total recharged -->
+        <!-- Row 2: notes + balance totals -->
         <div class="mt-2.5 flex items-center justify-between border-t border-gray-200/60 pt-2.5 dark:border-dark-600/60">
           <p class="min-w-0 flex-1 truncate text-xs text-gray-500 dark:text-dark-400" :title="user.notes || ''">
             <template v-if="user.notes">{{ t('admin.users.notes') }}: {{ user.notes }}</template>
             <template v-else>&nbsp;</template>
           </p>
-          <p class="ml-4 flex-shrink-0 text-xs text-gray-500 dark:text-dark-400">
-            {{ t('admin.users.totalRecharged') }}: <span class="font-semibold text-emerald-600 dark:text-emerald-400">${{ totalRecharged.toFixed(2) }}</span>
-          </p>
+          <div class="ml-4 flex flex-shrink-0 flex-wrap justify-end gap-x-3 gap-y-1 text-xs text-gray-500 dark:text-dark-400">
+            <span>{{ t('admin.users.totalRecharged') }}: <span class="font-semibold text-emerald-600 dark:text-emerald-400">${{ totalRecharged.toFixed(2) }}</span></span>
+            <span>{{ t('balance.totalGifted') }}: <span class="font-semibold text-sky-600 dark:text-sky-400">${{ totalGifted.toFixed(2) }}</span></span>
+          </div>
         </div>
       </div>
 
@@ -121,7 +127,10 @@
                   {{ item.notes.length > 60 ? item.notes.substring(0, 55) + '...' : item.notes }}
                 </p>
                 <p class="mt-0.5 text-xs text-gray-400 dark:text-dark-500">
-                  {{ formatDateTime(item.used_at || item.created_at) }}
+                  <span>{{ formatDateTime(item.used_at || item.created_at) }}</span>
+                  <span v-if="isBalanceType(item.type) && item.value > 0" class="ml-2">
+                    {{ getBalanceSourceLabel(item.balance_source) }}
+                  </span>
                 </p>
               </div>
             </div>
@@ -176,6 +185,7 @@ import { ref, computed, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { adminAPI, type BalanceHistoryItem } from '@/api/admin'
 import { formatDateTime } from '@/utils/format'
+import { formatBalanceAmount, getBalanceSplit } from '@/utils/balance'
 import type { AdminUser } from '@/types'
 import BaseDialog from '@/components/common/BaseDialog.vue'
 import Select from '@/components/common/Select.vue'
@@ -190,10 +200,12 @@ const loading = ref(false)
 const currentPage = ref(1)
 const total = ref(0)
 const totalRecharged = ref(0)
+const totalGifted = ref(0)
 const pageSize = 15
 const typeFilter = ref('')
 
 const totalPages = computed(() => Math.ceil(total.value / pageSize) || 1)
+const balanceSplit = computed(() => getBalanceSplit(props.user))
 
 // Type filter options
 const typeOptions = computed(() => [
@@ -228,6 +240,7 @@ const loadHistory = async (page: number) => {
     history.value = res.items || []
     total.value = res.total || 0
     totalRecharged.value = res.total_recharged || 0
+    totalGifted.value = res.total_gifted || 0
   } catch (error) {
     console.error('Failed to load balance history:', error)
   } finally {
@@ -243,6 +256,10 @@ const isBalanceType = (type: string) => type === 'balance' || type === 'admin_ba
 
 // Helper: check if subscription type
 const isSubscriptionType = (type: string) => type === 'subscription'
+
+const getBalanceSourceLabel = (source?: string) => {
+  return source === 'gift' ? t('balance.giftGrant') : t('balance.paidRecharge')
+}
 
 // Icon name based on type
 const getIconName = (item: BalanceHistoryItem) => {

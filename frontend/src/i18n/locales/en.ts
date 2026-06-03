@@ -344,6 +344,17 @@ export default {
     }
   },
 
+  balance: {
+    paidBalance: 'Paid Balance',
+    giftBalance: 'Free Balance',
+    paidShort: 'Paid',
+    giftShort: 'Free',
+    totalGifted: 'Total Gifted',
+    balanceSource: 'Balance Source',
+    paidRecharge: 'Paid Recharge',
+    giftGrant: 'Free Grant'
+  },
+
   // Navigation
   nav: {
     dashboard: 'Dashboard',
@@ -2089,6 +2100,12 @@ export default {
         rpmLimit: 'Requests Per Minute (RPM)',
         rpmLimitPlaceholder: '0 = unlimited',
         rpmLimitHint: 'Max requests per minute for each user in this group; 0 = unlimited. Once set, it takes over per-user rate limiting in this group (overrides the user-level rpm_limit fallback).'
+      },
+      balanceTier: {
+        title: 'Balance Tier',
+        free: 'Free',
+        plus: 'Plus',
+        hint: 'Free groups can use free and paid balance. Plus groups require paid balance and only deduct paid balance.'
       },
       enterGroupName: 'Enter group name',
       optionalDescription: 'Optional description',

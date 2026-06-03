@@ -42,6 +42,18 @@ const (
 	RedeemTypeInvitation   = "invitation"
 )
 
+// Balance source constants
+const (
+	BalanceSourcePaid = "paid"
+	BalanceSourceGift = "gift"
+)
+
+// Group balance tier constants
+const (
+	GroupBalanceTierFree = "free"
+	GroupBalanceTierPlus = "plus"
+)
+
 // PromoCode status constants
 const (
 	PromoCodeStatusActive   = "active"

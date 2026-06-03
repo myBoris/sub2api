@@ -16,12 +16,14 @@ import (
 )
 
 var (
-	ErrRedeemCodeNotFound  = infraerrors.NotFound("REDEEM_CODE_NOT_FOUND", "redeem code not found")
-	ErrRedeemCodeUsed      = infraerrors.Conflict("REDEEM_CODE_USED", "redeem code already used")
-	ErrRedeemCodeExpired   = infraerrors.Conflict("REDEEM_CODE_EXPIRED", "redeem code expired")
-	ErrInsufficientBalance = infraerrors.BadRequest("INSUFFICIENT_BALANCE", "insufficient balance")
-	ErrRedeemRateLimited   = infraerrors.TooManyRequests("REDEEM_RATE_LIMITED", "too many failed attempts, please try again later")
-	ErrRedeemCodeLocked    = infraerrors.Conflict("REDEEM_CODE_LOCKED", "redeem code is being processed, please try again")
+	ErrRedeemCodeNotFound      = infraerrors.NotFound("REDEEM_CODE_NOT_FOUND", "redeem code not found")
+	ErrRedeemCodeUsed          = infraerrors.Conflict("REDEEM_CODE_USED", "redeem code already used")
+	ErrRedeemCodeExpired       = infraerrors.Conflict("REDEEM_CODE_EXPIRED", "redeem code expired")
+	ErrInsufficientBalance     = infraerrors.BadRequest("INSUFFICIENT_BALANCE", "insufficient balance")
+	ErrInsufficientGiftBalance = infraerrors.BadRequest("INSUFFICIENT_GIFT_BALANCE", "insufficient gift balance")
+	ErrInsufficientPaidBalance = infraerrors.BadRequest("INSUFFICIENT_PAID_BALANCE", "insufficient paid balance")
+	ErrRedeemRateLimited       = infraerrors.TooManyRequests("REDEEM_RATE_LIMITED", "too many failed attempts, please try again later")
+	ErrRedeemCodeLocked        = infraerrors.Conflict("REDEEM_CODE_LOCKED", "redeem code is being processed, please try again")
 )
 
 const (
@@ -207,6 +209,7 @@ func (s *RedeemService) GenerateCodes(ctx context.Context, req GenerateCodesRequ
 	if codeType == "" {
 		codeType = RedeemTypeBalance
 	}
+	balanceSource := normalizeBalanceSourceOrPaid("")
 
 	// 邀请码类型的 value 设为 0
 	value := req.Value
@@ -222,10 +225,11 @@ func (s *RedeemService) GenerateCodes(ctx context.Context, req GenerateCodesRequ
 		}
 
 		codes = append(codes, RedeemCode{
-			Code:   code,
-			Type:   codeType,
-			Value:  value,
-			Status: StatusUnused,
+			Code:          code,
+			Type:          codeType,
+			Value:         value,
+			BalanceSource: balanceSource,
+			Status:        StatusUnused,
 		})
 	}
 
@@ -251,6 +255,7 @@ func (s *RedeemService) CreateCode(ctx context.Context, code *RedeemCode) error 
 	if code.Type == "" {
 		code.Type = RedeemTypeBalance
 	}
+	code.BalanceSource = normalizeBalanceSourceOrPaid(code.BalanceSource)
 	if code.Type != RedeemTypeInvitation && code.Value == 0 {
 		return errors.New("value must not be zero")
 	}
@@ -445,7 +450,7 @@ func (s *RedeemService) Redeem(ctx context.Context, userID int64, code string) (
 		if amount < 0 && user.Balance+amount < 0 {
 			amount = -user.Balance
 		}
-		if err := s.userRepo.UpdateBalance(txCtx, userID, amount); err != nil {
+		if err := updateUserBalanceWithSource(txCtx, s.userRepo, userID, amount, redeemCode.BalanceSource); err != nil {
 			return nil, fmt.Errorf("update user balance: %w", err)
 		}
 

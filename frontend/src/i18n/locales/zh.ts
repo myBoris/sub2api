@@ -344,6 +344,17 @@ export default {
     }
   },
 
+  balance: {
+    paidBalance: '付费余额',
+    giftBalance: '免费余额',
+    paidShort: '付费',
+    giftShort: '免费',
+    totalGifted: '累计赠送',
+    balanceSource: '余额来源',
+    paidRecharge: '付费充值',
+    giftGrant: '免费赠送'
+  },
+
   // Navigation
   nav: {
     dashboard: '仪表盘',
@@ -2155,6 +2166,12 @@ export default {
         priorityLabel: '优先级',
         priorityHint: '数值越小优先级越高，用于账号调度',
         statusLabel: '状态'
+      },
+      balanceTier: {
+        title: '余额等级',
+        free: 'Free',
+        plus: 'Plus',
+        hint: 'Free 分组可使用免费余额和付费余额；Plus 分组必须有付费余额，且只扣付费余额。'
       },
       exclusiveObj: {
         yes: '是',

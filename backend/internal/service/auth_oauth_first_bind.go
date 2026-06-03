@@ -78,7 +78,7 @@ ON CONFLICT (user_id, provider_type, grant_reason) DO NOTHING`,
 	}
 
 	if providerDefaults.Balance != 0 {
-		if err := client.User.UpdateOneID(userID).AddBalance(providerDefaults.Balance).Exec(ctx); err != nil {
+		if err := client.User.UpdateOneID(userID).AddBalance(providerDefaults.Balance).AddGiftBalance(providerDefaults.Balance).AddTotalGifted(providerDefaults.Balance).Exec(ctx); err != nil {
 			return fmt.Errorf("apply first bind balance default: %w", err)
 		}
 	}

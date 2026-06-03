@@ -96,6 +96,15 @@ func (b *billingCacheWorkerStub) BatchGetUserPlatformQuotaCache(ctx context.Cont
 	return nil, nil
 }
 
+type billingEligibilityUserRepoStub struct {
+	UserRepository
+	user *User
+}
+
+func (s *billingEligibilityUserRepoStub) GetByID(ctx context.Context, id int64) (*User, error) {
+	return s.user, nil
+}
+
 func TestBillingCacheServiceQueueHighLoad(t *testing.T) {
 	cache := &billingCacheWorkerStub{}
 	svc := NewBillingCacheService(cache, nil, nil, nil, nil, nil, &config.Config{}, nil)
@@ -129,4 +138,70 @@ func TestBillingCacheServiceEnqueueAfterStopReturnsFalse(t *testing.T) {
 		amount: 1,
 	})
 	require.False(t, enqueued)
+}
+
+func TestBillingCacheServiceCheckBillingEligibility_FreeRequiresGiftBalance(t *testing.T) {
+	userRepo := &billingEligibilityUserRepoStub{user: &User{
+		ID:          1,
+		Balance:     10,
+		PaidBalance: 10,
+		GiftBalance: 0,
+		Status:      StatusActive,
+	}}
+	svc := NewBillingCacheService(nil, userRepo, nil, nil, nil, nil, &config.Config{}, nil)
+	t.Cleanup(svc.Stop)
+
+	err := svc.CheckBillingEligibility(
+		context.Background(),
+		&User{ID: 1},
+		&APIKey{},
+		&Group{ID: 2, SubscriptionType: SubscriptionTypeStandard, BalanceTier: GroupBalanceTierFree},
+		nil,
+		"",
+	)
+	require.ErrorIs(t, err, ErrInsufficientGiftBalance)
+}
+
+func TestBillingCacheServiceCheckBillingEligibility_PlusRequiresPaidBalance(t *testing.T) {
+	userRepo := &billingEligibilityUserRepoStub{user: &User{
+		ID:          1,
+		Balance:     10,
+		PaidBalance: 0,
+		GiftBalance: 10,
+		Status:      StatusActive,
+	}}
+	svc := NewBillingCacheService(nil, userRepo, nil, nil, nil, nil, &config.Config{}, nil)
+	t.Cleanup(svc.Stop)
+
+	err := svc.CheckBillingEligibility(
+		context.Background(),
+		&User{ID: 1},
+		&APIKey{},
+		&Group{ID: 2, SubscriptionType: SubscriptionTypeStandard, BalanceTier: GroupBalanceTierPlus},
+		nil,
+		"",
+	)
+	require.ErrorIs(t, err, ErrInsufficientPaidBalance)
+}
+
+func TestBillingCacheServiceCheckBillingEligibility_UsesTierBucketNotTotalBalance(t *testing.T) {
+	userRepo := &billingEligibilityUserRepoStub{user: &User{
+		ID:          1,
+		Balance:     -5,
+		PaidBalance: 0,
+		GiftBalance: 1,
+		Status:      StatusActive,
+	}}
+	svc := NewBillingCacheService(nil, userRepo, nil, nil, nil, nil, &config.Config{}, nil)
+	t.Cleanup(svc.Stop)
+
+	err := svc.CheckBillingEligibility(
+		context.Background(),
+		&User{ID: 1},
+		&APIKey{},
+		&Group{ID: 2, SubscriptionType: SubscriptionTypeStandard, BalanceTier: GroupBalanceTierFree},
+		nil,
+		"",
+	)
+	require.NoError(t, err)
 }

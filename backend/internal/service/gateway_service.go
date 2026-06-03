@@ -8356,7 +8356,7 @@ func postUsageBilling(ctx context.Context, p *postUsageBillingParams, deps *bill
 		}
 	} else {
 		if cost.ActualCost > 0 {
-			if err := deps.userRepo.DeductBalance(billingCtx, p.User.ID, cost.ActualCost); err != nil {
+			if err := deductUserBalanceWithTier(billingCtx, deps.userRepo, p.User.ID, cost.ActualCost, usageBillingGroupBalanceTier(p)); err != nil {
 				slog.Error("deduct balance failed", "user_id", p.User.ID, "error", err)
 			}
 		}
@@ -8448,6 +8448,7 @@ func buildUsageBillingCommand(requestID string, usageLog *UsageLog, p *postUsage
 		UserID:             p.User.ID,
 		AccountID:          p.Account.ID,
 		AccountType:        p.Account.Type,
+		GroupBalanceTier:   usageBillingGroupBalanceTier(p),
 		RequestPayloadHash: strings.TrimSpace(p.RequestPayloadHash),
 	}
 	if usageLog != nil {
@@ -8492,6 +8493,13 @@ func buildUsageBillingCommand(requestID string, usageLog *UsageLog, p *postUsage
 
 	cmd.Normalize()
 	return cmd
+}
+
+func usageBillingGroupBalanceTier(p *postUsageBillingParams) string {
+	if p != nil && p.APIKey != nil && p.APIKey.Group != nil {
+		return NormalizeGroupBalanceTier(p.APIKey.Group.BalanceTier)
+	}
+	return GroupBalanceTierFree
 }
 
 func applyUsageBilling(ctx context.Context, requestID string, usageLog *UsageLog, p *postUsageBillingParams, deps *billingDeps, repo UsageBillingRepository) (bool, error) {
