@@ -27,6 +27,7 @@ import (
 	dbproxy "github.com/Wei-Shaw/sub2api/ent/proxy"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/adminaccess"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/ownership"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/pagination"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/lib/pq"
@@ -126,6 +127,19 @@ func newAccountRepositoryWithSQL(client *dbent.Client, sqlq sqlExecutor, schedul
 }
 
 func (r *accountRepository) Create(ctx context.Context, account *service.Account) error {
+	if _, scoped := ownership.UserID(ctx); scoped && dbent.TxFromContext(ctx) == nil {
+		tx, err := r.client.Tx(ctx)
+		if err != nil && !errors.Is(err, dbent.ErrTxStarted) {
+			return err
+		}
+		if tx != nil {
+			defer func() { _ = tx.Rollback() }()
+			if err := r.Create(dbent.NewTxContext(ctx, tx), account); err != nil {
+				return err
+			}
+			return tx.Commit()
+		}
+	}
 	if scoped := r.accountTransactionScope(ctx); scoped != r {
 		return scoped.Create(ctx, account)
 	}
@@ -141,6 +155,11 @@ func (r *accountRepository) Create(ctx context.Context, account *service.Account
 func createAccountRecord(ctx context.Context, client *dbent.Client, account *service.Account) error {
 	if account == nil {
 		return service.ErrAccountNilInput
+	}
+	if account.ParentAccountID != nil {
+		if err := requireOwnedAccounts(ctx, client, *account.ParentAccountID); err != nil {
+			return err
+		}
 	}
 
 	builder := client.Account.Create().
@@ -202,6 +221,9 @@ func createAccountRecord(ctx context.Context, client *dbent.Client, account *ser
 		return translatePersistenceError(err, service.ErrAccountNotFound, nil)
 	}
 
+	if err := insertResourceOwner(ctx, client, ownership.AccountTable, "account_id", created.ID); err != nil {
+		return err
+	}
 	account.ID = created.ID
 	account.CreatedAt = created.CreatedAt
 	account.UpdatedAt = created.UpdatedAt
@@ -230,6 +252,9 @@ func (r *accountRepository) CreateWithAccountGroups(ctx context.Context, account
 	groupIDs := make([]int64, 0, len(groups))
 	for i := range groups {
 		groupIDs = append(groupIDs, groups[i].GroupID)
+	}
+	if err := requireOwnedGroups(ctx, txClient, groupIDs...); err != nil {
+		return err
 	}
 	if err := lockLiveGroups(ctx, txClient, groupIDs); err != nil {
 		return err
@@ -270,7 +295,7 @@ func (r *accountRepository) GetByID(ctx context.Context, id int64) (*service.Acc
 	if scoped := r.accountTransactionScope(ctx); scoped != r {
 		return scoped.GetByID(ctx, id)
 	}
-	m, err := r.client.Account.Query().Where(dbaccount.IDEQ(id)).Only(ctx)
+	m, err := scopedAccountQuery(ctx, r.client.Account.Query()).Where(dbaccount.IDEQ(id)).Only(ctx)
 	if err != nil {
 		return nil, translatePersistenceError(err, service.ErrAccountNotFound, nil)
 	}
@@ -307,8 +332,7 @@ func (r *accountRepository) GetByIDs(ctx context.Context, ids []int64) ([]*servi
 		return []*service.Account{}, nil
 	}
 
-	entAccounts, err := r.client.Account.
-		Query().
+	entAccounts, err := scopedAccountQuery(ctx, r.client.Account.Query()).
 		Where(dbaccount.IDIn(uniqueIDs...)).
 		WithProxy().
 		All(ctx)
@@ -375,7 +399,7 @@ func (r *accountRepository) GetByIDs(ctx context.Context, ids []int64) ([]*servi
 //   - 不加载完整的账号实体及其关联数据（Groups、Proxy 等）
 //   - 适用于删除前的存在性检查等只需判断有无的场景
 func (r *accountRepository) ExistsByID(ctx context.Context, id int64) (bool, error) {
-	exists, err := r.client.Account.Query().Where(dbaccount.IDEQ(id)).Exist(ctx)
+	exists, err := scopedAccountQuery(ctx, r.client.Account.Query()).Where(dbaccount.IDEQ(id)).Exist(ctx)
 	if err != nil {
 		return false, err
 	}
@@ -391,7 +415,7 @@ func (r *accountRepository) GetByCRSAccountID(ctx context.Context, crsAccountID 
 	// 排除 spark 影子账号(parent_account_id 非空):影子不持凭据,绝不能被 CRS 当作普通账号
 	// 更新而覆盖 type/credentials/proxy。即便影子 Extra 被误写入 crs_account_id 也不会命中
 	// (外审第7轮 P1)。
-	m, err := r.client.Account.Query().
+	m, err := scopedAccountQuery(ctx, r.client.Account.Query()).
 		Where(dbaccount.ParentAccountIDIsNil()).
 		Where(func(s *entsql.Selector) {
 			s.Where(sqljson.ValueEQ(dbaccount.FieldExtra, crsAccountID, sqljson.Path("crs_account_id")))
@@ -532,6 +556,14 @@ func (r *accountRepository) updateLockedAccount(
 	explicitRateSyncEnabled *bool,
 	explicitRateMultiplier *float64,
 ) (*dbent.Account, error) {
+	if err := requireOwnedAccounts(ctx, client, account.ID); err != nil {
+		return nil, err
+	}
+	if account.ParentAccountID != nil {
+		if err := requireOwnedAccounts(ctx, client, *account.ParentAccountID); err != nil {
+			return nil, err
+		}
+	}
 	extra, err := lockAndMergeAccountProbeExtra(ctx, client, account, explicitProbeEnabled, explicitRateSyncEnabled)
 	if err != nil {
 		return nil, err
@@ -872,6 +904,9 @@ func decodeAccountExtraJSON(raw []byte) (any, bool, error) {
 }
 
 func (r *accountRepository) UpdateCredentials(ctx context.Context, id int64, credentials map[string]any) error {
+	if err := requireOwnedAccounts(ctx, r.sql, id); err != nil {
+		return err
+	}
 	payload, err := json.Marshal(normalizeJSONMap(credentials))
 	if err != nil {
 		return err
@@ -989,6 +1024,9 @@ func (r *accountRepository) UpdateCredentials(ctx context.Context, id int64, cre
 }
 
 func (r *accountRepository) Delete(ctx context.Context, id int64) error {
+	if err := requireOwnedAccounts(ctx, r.sql, id); err != nil {
+		return err
+	}
 	if scoped := r.accountTransactionScope(ctx); scoped != r {
 		return scoped.Delete(ctx, id)
 	}
@@ -1134,7 +1172,7 @@ func (r *accountRepository) accountListFilteredQuery(platform, accountType, stat
 }
 
 func (r *accountRepository) ListWithFilters(ctx context.Context, params pagination.PaginationParams, platform, accountType, status, search string, groupID int64, privacyMode string) ([]service.Account, *pagination.PaginationResult, error) {
-	q := r.accountListFilteredQuery(platform, accountType, status, search, groupID, privacyMode)
+	q := scopedAccountQuery(ctx, r.accountListFilteredQuery(platform, accountType, status, search, groupID, privacyMode))
 	// Clone before Count so interceptor-appended predicates (SoftDeleteMixin's
 	// deleted_at IS NULL) don't accumulate on the shared builder and pollute the
 	// subsequent list query. Same pattern used in group_repo/promo_code_repo/user_repo
@@ -1164,7 +1202,7 @@ func (r *accountRepository) ListWithFilters(ctx context.Context, params paginati
 }
 
 func (r *accountRepository) ListAllWithFilters(ctx context.Context, platform, accountType, status, search string, groupID int64, privacyMode string) ([]service.Account, error) {
-	accounts, err := r.accountListFilteredQuery(platform, accountType, status, search, groupID, privacyMode).All(ctx)
+	accounts, err := scopedAccountQuery(ctx, r.accountListFilteredQuery(platform, accountType, status, search, groupID, privacyMode)).All(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -1176,7 +1214,7 @@ func (r *accountRepository) ListOpsAccountsForStats(ctx context.Context, platfor
 		return []service.Account{}, nil
 	}
 
-	q := r.client.Account.Query()
+	q := scopedAccountQuery(ctx, r.client.Account.Query())
 	if platformFilter = strings.TrimSpace(platformFilter); platformFilter != "" {
 		q = q.Where(dbaccount.PlatformEQ(platformFilter))
 	}
@@ -1309,7 +1347,7 @@ func (r *accountRepository) ListByGroup(ctx context.Context, groupID int64) ([]s
 }
 
 func (r *accountRepository) ListActive(ctx context.Context) ([]service.Account, error) {
-	accounts, err := r.client.Account.Query().
+	accounts, err := scopedAccountQuery(ctx, r.client.Account.Query()).
 		Where(dbaccount.StatusEQ(service.StatusActive)).
 		Order(dbent.Asc(dbaccount.FieldPriority)).
 		All(ctx)
@@ -1425,7 +1463,7 @@ func (r *accountRepository) ListOAuthRefreshCandidatePage(ctx context.Context, o
 }
 
 func (r *accountRepository) ListByPlatform(ctx context.Context, platform string) ([]service.Account, error) {
-	accounts, err := r.client.Account.Query().
+	accounts, err := scopedAccountQuery(ctx, r.client.Account.Query()).
 		Where(
 			dbaccount.PlatformEQ(platform),
 			dbaccount.StatusEQ(service.StatusActive),
@@ -1908,6 +1946,9 @@ func (r *accountRepository) syncSchedulerAccountSnapshots(ctx context.Context, a
 }
 
 func (r *accountRepository) ClearError(ctx context.Context, id int64) error {
+	if err := requireOwnedAccounts(ctx, r.sql, id); err != nil {
+		return err
+	}
 	if scoped := r.accountTransactionScope(ctx); scoped != r {
 		return scoped.ClearError(ctx, id)
 	}
@@ -1927,6 +1968,12 @@ func (r *accountRepository) ClearError(ctx context.Context, id int64) error {
 }
 
 func (r *accountRepository) AddToGroup(ctx context.Context, accountID, groupID int64, priority int) error {
+	if err := requireOwnedGroups(ctx, r.sql, groupID); err != nil {
+		return err
+	}
+	if err := requireOwnedAccounts(ctx, r.sql, accountID); err != nil {
+		return err
+	}
 	tx, err := r.client.Tx(ctx)
 	if err != nil && !errors.Is(err, dbent.ErrTxStarted) {
 		return err
@@ -1960,6 +2007,12 @@ func (r *accountRepository) AddToGroup(ctx context.Context, accountID, groupID i
 }
 
 func (r *accountRepository) RemoveFromGroup(ctx context.Context, accountID, groupID int64) error {
+	if err := requireOwnedGroups(ctx, r.sql, groupID); err != nil {
+		return err
+	}
+	if err := requireOwnedAccounts(ctx, r.sql, accountID); err != nil {
+		return err
+	}
 	_, err := r.client.AccountGroup.Delete().
 		Where(
 			dbaccountgroup.AccountIDEQ(accountID),
@@ -1977,7 +2030,7 @@ func (r *accountRepository) RemoveFromGroup(ctx context.Context, accountID, grou
 }
 
 func (r *accountRepository) GetGroups(ctx context.Context, accountID int64) ([]service.Group, error) {
-	groups, err := r.client.Group.Query().
+	groups, err := scopedGroupQuery(ctx, r.client.Group.Query()).
 		Where(
 			dbgroup.HasAccountsWith(dbaccount.IDEQ(accountID)),
 		).
@@ -1994,6 +2047,9 @@ func (r *accountRepository) GetGroups(ctx context.Context, accountID int64) ([]s
 }
 
 func (r *accountRepository) BindGroups(ctx context.Context, accountID int64, groupIDs []int64) error {
+	if err := requireOwnedAccounts(ctx, r.sql, accountID); err != nil {
+		return err
+	}
 	if scoped := r.accountTransactionScope(ctx); scoped != r {
 		return scoped.BindGroups(ctx, accountID, groupIDs)
 	}
@@ -2017,6 +2073,9 @@ func (r *accountRepository) BindGroups(ctx context.Context, accountID int64, gro
 	} else {
 		// 已处于外部事务中（ErrTxStarted），复用当前 client
 		txClient = r.client
+	}
+	if err := requireOwnedGroups(ctx, txClient, groupIDs...); err != nil {
+		return err
 	}
 	if err := lockLiveGroups(ctx, txClient, groupIDs); err != nil {
 		return err
@@ -2059,7 +2118,7 @@ func (r *accountRepository) BindGroups(ctx context.Context, accountID int64, gro
 }
 
 func (r *accountRepository) ListSchedulable(ctx context.Context) ([]service.Account, error) {
-	accounts, err := r.schedulableAccountsQuery(time.Now()).All(ctx)
+	accounts, err := scopedAccountQuery(ctx, r.schedulableAccountsQuery(time.Now())).All(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -2141,6 +2200,13 @@ func (r *accountRepository) ListSchedulableCapacityByGroupIDs(ctx context.Contex
 		return rows, nil
 	}
 
+	ownerClause := ""
+	args := []any{pq.Array(groupIDs), service.StatusActive, time.Now()}
+	if userID, scoped := ownership.UserID(ctx); scoped {
+		ownerClause = ` AND a.id IN (SELECT account_id FROM custom_user_accounts WHERE user_id = $4)
+			AND ag.group_id IN (SELECT group_id FROM custom_user_groups WHERE user_id = $4)`
+		args = append(args, userID)
+	}
 	rows, err := r.sql.QueryContext(ctx, `
 		SELECT
 			ag.group_id,
@@ -2160,8 +2226,9 @@ func (r *accountRepository) ListSchedulableCapacityByGroupIDs(ctx context.Contex
 			AND (a.expires_at IS NULL OR a.expires_at > $3 OR a.auto_pause_on_expired = FALSE)
 			AND (a.overload_until IS NULL OR a.overload_until <= $3)
 			AND (a.rate_limit_reset_at IS NULL OR a.rate_limit_reset_at <= $3)
+		`+ownerClause+`
 		ORDER BY ag.group_id ASC, ag.priority ASC, a.priority ASC, a.id ASC
-	`, pq.Array(groupIDs), service.StatusActive, time.Now())
+	`, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -2199,7 +2266,7 @@ func (r *accountRepository) ListSchedulableCapacityByGroupIDs(ctx context.Contex
 
 func (r *accountRepository) ListSchedulableByPlatform(ctx context.Context, platform string) ([]service.Account, error) {
 	now := time.Now()
-	accounts, err := r.client.Account.Query().
+	accounts, err := scopedAccountQuery(ctx, r.client.Account.Query()).
 		Where(
 			dbaccount.PlatformEQ(platform),
 			dbaccount.StatusEQ(service.StatusActive),
@@ -2233,7 +2300,7 @@ func (r *accountRepository) ListSchedulableByPlatforms(ctx context.Context, plat
 	// 仅返回可调度的活跃账号，并过滤处于过载/限流窗口的账号。
 	// 代理与分组信息统一在 accountsToService 中批量加载，避免 N+1 查询。
 	now := time.Now()
-	accounts, err := r.client.Account.Query().
+	accounts, err := scopedAccountQuery(ctx, r.client.Account.Query()).
 		Where(
 			dbaccount.PlatformIn(platforms...),
 			dbaccount.StatusEQ(service.StatusActive),
@@ -2253,7 +2320,7 @@ func (r *accountRepository) ListSchedulableByPlatforms(ctx context.Context, plat
 
 func (r *accountRepository) ListSchedulableUngroupedByPlatform(ctx context.Context, platform string) ([]service.Account, error) {
 	now := time.Now()
-	accounts, err := r.client.Account.Query().
+	accounts, err := scopedAccountQuery(ctx, r.client.Account.Query()).
 		Where(
 			dbaccount.PlatformEQ(platform),
 			dbaccount.StatusEQ(service.StatusActive),
@@ -2277,7 +2344,7 @@ func (r *accountRepository) ListSchedulableUngroupedByPlatforms(ctx context.Cont
 		return nil, nil
 	}
 	now := time.Now()
-	accounts, err := r.client.Account.Query().
+	accounts, err := scopedAccountQuery(ctx, r.client.Account.Query()).
 		Where(
 			dbaccount.PlatformIn(platforms...),
 			dbaccount.StatusEQ(service.StatusActive),
@@ -2338,7 +2405,7 @@ func (r *accountRepository) ListModelAvailabilityCandidates(
 	if !includeGrouped {
 		preds = append(preds, dbaccount.Not(dbaccount.HasAccountGroups()))
 	}
-	accounts, err := r.client.Account.Query().
+	accounts, err := scopedAccountQuery(ctx, r.client.Account.Query()).
 		Where(preds...).
 		Order(dbent.Asc(dbaccount.FieldPriority)).
 		All(ctx)
@@ -2622,6 +2689,9 @@ func (r *accountRepository) SetGrokCredentialTempUnschedulableIfMatch(
 }
 
 func (r *accountRepository) ClearTempUnschedulable(ctx context.Context, id int64) error {
+	if err := requireOwnedAccounts(ctx, r.sql, id); err != nil {
+		return err
+	}
 	if scoped := r.accountTransactionScope(ctx); scoped != r {
 		return scoped.ClearTempUnschedulable(ctx, id)
 	}
@@ -2644,6 +2714,9 @@ func (r *accountRepository) ClearTempUnschedulable(ctx context.Context, id int64
 }
 
 func (r *accountRepository) ClearRateLimit(ctx context.Context, id int64) error {
+	if err := requireOwnedAccounts(ctx, r.sql, id); err != nil {
+		return err
+	}
 	if scoped := r.accountTransactionScope(ctx); scoped != r {
 		return scoped.ClearRateLimit(ctx, id)
 	}
@@ -2664,6 +2737,9 @@ func (r *accountRepository) ClearRateLimit(ctx context.Context, id int64) error 
 }
 
 func (r *accountRepository) ClearAntigravityQuotaScopes(ctx context.Context, id int64) error {
+	if err := requireOwnedAccounts(ctx, r.sql, id); err != nil {
+		return err
+	}
 	if scoped := r.accountTransactionScope(ctx); scoped != r {
 		return scoped.ClearAntigravityQuotaScopes(ctx, id)
 	}
@@ -2691,6 +2767,9 @@ func (r *accountRepository) ClearAntigravityQuotaScopes(ctx context.Context, id 
 }
 
 func (r *accountRepository) ClearModelRateLimits(ctx context.Context, id int64) error {
+	if err := requireOwnedAccounts(ctx, r.sql, id); err != nil {
+		return err
+	}
 	if scoped := r.accountTransactionScope(ctx); scoped != r {
 		return scoped.ClearModelRateLimits(ctx, id)
 	}
@@ -2722,6 +2801,9 @@ func (r *accountRepository) ClearModelRateLimits(ctx context.Context, id int64) 
 // 与 ClearModelRateLimits 的全量清除不同，这里只解封一个模型窗口，
 // 不会把其他模型或并发新写入的限流一起抹掉。
 func (r *accountRepository) ClearModelRateLimit(ctx context.Context, id int64, scope string) error {
+	if err := requireOwnedAccounts(ctx, r.sql, id); err != nil {
+		return err
+	}
 	if strings.TrimSpace(scope) == "" {
 		return nil
 	}
@@ -2802,6 +2884,9 @@ func (r *accountRepository) UpdateSessionWindowEnd(ctx context.Context, id int64
 }
 
 func (r *accountRepository) SetSchedulable(ctx context.Context, id int64, schedulable bool) error {
+	if err := requireOwnedAccounts(ctx, r.sql, id); err != nil {
+		return err
+	}
 	if scoped := r.accountTransactionScope(ctx); scoped != r {
 		return scoped.SetSchedulable(ctx, id, schedulable)
 	}
@@ -2863,6 +2948,9 @@ func (r *accountRepository) AutoPauseExpiredAccounts(ctx context.Context, now ti
 }
 
 func (r *accountRepository) UpdateExtra(ctx context.Context, id int64, updates map[string]any) error {
+	if err := requireOwnedAccounts(ctx, r.sql, id); err != nil {
+		return err
+	}
 	if scoped := r.accountTransactionScope(ctx); scoped != r {
 		return scoped.UpdateExtra(ctx, id, updates)
 	}
@@ -3140,6 +3228,9 @@ func ollamaCloudUsageSnapshotClearRequested(extra map[string]any) bool {
 }
 
 func (r *accountRepository) BulkUpdate(ctx context.Context, ids []int64, updates service.AccountBulkUpdate) (int64, error) {
+	if err := requireOwnedAccounts(ctx, r.sql, ids...); err != nil {
+		return 0, err
+	}
 	if len(ids) == 0 {
 		return 0, nil
 	}
@@ -3445,6 +3536,9 @@ func (r *accountRepository) queryAccountsByGroup(ctx context.Context, groupID in
 	// 通过 account_groups 中间表查询账号，并按需叠加状态/平台/调度能力过滤。
 	preds := make([]dbpredicate.Account, 0, 6)
 	preds = append(preds, dbaccount.DeletedAtIsNil())
+	if userID, scoped := ownership.UserID(ctx); scoped {
+		preds = append(preds, ownedResourcePredicate(userID, ownership.AccountTable, "account_id"))
+	}
 	if opts.status != "" {
 		preds = append(preds, dbaccount.StatusEQ(opts.status))
 	}
@@ -3635,6 +3729,9 @@ func (r *accountRepository) loadAccountGroups(ctx context.Context, accountIDs []
 
 		for _, ag := range entries {
 			groupSvc := groupMap[ag.GroupID]
+			if _, scoped := ownership.UserID(ctx); scoped && groupSvc == nil {
+				continue
+			}
 			agSvc := service.AccountGroup{
 				AccountID: ag.AccountID,
 				GroupID:   ag.GroupID,
@@ -3665,7 +3762,7 @@ func (r *accountRepository) loadGroups(ctx context.Context, groupIDs []int64) (m
 		if end > len(groupIDs) {
 			end = len(groupIDs)
 		}
-		groups, err := r.client.Group.Query().Where(dbgroup.IDIn(groupIDs[start:end]...)).All(ctx)
+		groups, err := scopedGroupQuery(ctx, r.client.Group.Query()).Where(dbgroup.IDIn(groupIDs[start:end]...)).All(ctx)
 		if err != nil {
 			return nil, err
 		}
@@ -3828,7 +3925,7 @@ func itoa(v int) string {
 // FindByExtraField finds accounts by key-value pairs in the extra field.
 // Uses PostgreSQL JSONB @> operator for efficient queries (requires GIN index).
 func (r *accountRepository) FindByExtraField(ctx context.Context, key string, value any) ([]service.Account, error) {
-	accounts, err := r.client.Account.Query().
+	accounts, err := scopedAccountQuery(ctx, r.client.Account.Query()).
 		Where(
 			dbaccount.DeletedAtIsNil(),
 			func(s *entsql.Selector) {
@@ -4152,6 +4249,9 @@ func (r *accountRepository) IncrementQuotaUsed(ctx context.Context, id int64, am
 // ResetQuotaUsedAndClearRateLimitCooldown resets all quota dimensions and the
 // account-level cooldown in one statement. Other scheduler blocking state is preserved.
 func (r *accountRepository) ResetQuotaUsedAndClearRateLimitCooldown(ctx context.Context, id int64) error {
+	if err := requireOwnedAccounts(ctx, r.sql, id); err != nil {
+		return err
+	}
 	result, err := r.sql.ExecContext(ctx,
 		`UPDATE accounts SET extra = (
 			COALESCE(extra, '{}'::jsonb)
@@ -4182,6 +4282,9 @@ func (r *accountRepository) ResetQuotaUsedAndClearRateLimitCooldown(ctx context.
 // 仅当 proxy_fallback_origin_id IS NOT NULL 时执行更新；
 // 若影响行数为 0，则返回 ErrAccountNotInFallback（账号存在但不在 fallback 状态）。
 func (r *accountRepository) RevertProxyFallback(ctx context.Context, accountID int64) error {
+	if err := requireOwnedAccounts(ctx, r.sql, accountID); err != nil {
+		return err
+	}
 	// Probe snapshots belong to the network identity; invalidate only on a real proxy change.
 	res, err := r.sql.ExecContext(ctx, `
 		UPDATE accounts SET
@@ -4210,7 +4313,7 @@ func (r *accountRepository) ListShadowsByParent(ctx context.Context, parentID in
 	if scoped := r.accountTransactionScope(ctx); scoped != r {
 		return scoped.ListShadowsByParent(ctx, parentID)
 	}
-	rows, err := r.client.Account.Query().
+	rows, err := scopedAccountQuery(ctx, r.client.Account.Query()).
 		Where(dbaccount.ParentAccountIDEQ(parentID), dbaccount.QuotaDimensionEQ(dbaccount.QuotaDimensionSpark)).
 		All(ctx)
 	if err != nil {

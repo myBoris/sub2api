@@ -12,6 +12,7 @@ import (
 	dbent "github.com/Wei-Shaw/sub2api/ent"
 	"github.com/Wei-Shaw/sub2api/ent/group"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/ownership"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/pagination"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/lib/pq"
@@ -77,6 +78,20 @@ func newGroupRepositoryWithSQL(client *dbent.Client, sqlq sqlExecutor) *groupRep
 }
 
 func (r *groupRepository) Create(ctx context.Context, groupIn *service.Group) error {
+	if _, scoped := ownership.UserID(ctx); scoped {
+		tx, err := r.client.Tx(ctx)
+		if err != nil && !errors.Is(err, dbent.ErrTxStarted) {
+			return err
+		}
+		if tx != nil {
+			defer func() { _ = tx.Rollback() }()
+			scopedRepo := &groupRepository{client: tx.Client(), sql: tx.Client()}
+			if err := scopedRepo.Create(ctx, groupIn); err != nil {
+				return err
+			}
+			return tx.Commit()
+		}
+	}
 	if err := createGroupRecord(ctx, r.client, groupIn); err != nil {
 		return err
 	}
@@ -89,6 +104,9 @@ func (r *groupRepository) Create(ctx context.Context, groupIn *service.Group) er
 func createGroupRecord(ctx context.Context, client *dbent.Client, groupIn *service.Group) error {
 	if groupIn == nil {
 		return errors.New("group is nil")
+	}
+	if err := validateOwnedGroupReferences(ctx, client, groupIn); err != nil {
+		return err
 	}
 	modelPricing, err := json.Marshal(groupIn.ModelPricing)
 	if err != nil {
@@ -177,6 +195,9 @@ func createGroupRecord(ctx context.Context, client *dbent.Client, groupIn *servi
 	if err != nil {
 		return translatePersistenceError(err, nil, service.ErrGroupExists)
 	}
+	if err := insertResourceOwner(ctx, client, ownership.GroupTable, "group_id", created.ID); err != nil {
+		return err
+	}
 	groupIn.ID = created.ID
 	groupIn.CreatedAt = created.CreatedAt
 	groupIn.UpdatedAt = created.UpdatedAt
@@ -188,7 +209,7 @@ func (r *groupRepository) FindByDuplicateOperationID(ctx context.Context, operat
 	if operationID == "" {
 		return nil, nil
 	}
-	row, err := r.client.Group.Query().
+	row, err := scopedGroupQuery(ctx, r.client.Group.Query()).
 		Where(group.DuplicateOperationIDEQ(operationID)).
 		Order(dbent.Asc(group.FieldID)).
 		First(ctx)
@@ -204,6 +225,9 @@ func (r *groupRepository) FindByDuplicateOperationID(ctx context.Context, operat
 // CreateFromSource atomically persists a copied group, clones the source
 // account bindings with their exact priorities, and writes its scheduler event.
 func (r *groupRepository) CreateFromSource(ctx context.Context, groupIn *service.Group, sourceGroupID int64) error {
+	if err := requireOwnedGroups(ctx, r.sql, sourceGroupID); err != nil {
+		return err
+	}
 	if groupIn == nil {
 		return errors.New("group is nil")
 	}
@@ -224,6 +248,12 @@ func (r *groupRepository) CreateFromSource(ctx context.Context, groupIn *service
 	if err := createGroupRecord(ctx, txClient, groupIn); err != nil {
 		return err
 	}
+	ownerClause := ""
+	args := []any{sourceGroupID, groupIn.ID, groupIn.RequireOAuthOnly, service.AccountTypeAPIKey}
+	if userID, scoped := ownership.UserID(ctx); scoped {
+		ownerClause = " AND a.id IN (SELECT account_id FROM custom_user_accounts WHERE user_id = $5)"
+		args = append(args, userID)
+	}
 	result, err := txClient.ExecContext(
 		ctx,
 		`INSERT INTO account_groups (account_id, group_id, priority, created_at)
@@ -232,12 +262,9 @@ func (r *groupRepository) CreateFromSource(ctx context.Context, groupIn *service
 		 JOIN accounts a ON a.id = ag.account_id
 		 WHERE ag.group_id = $1
 		   AND a.deleted_at IS NULL
-		   AND (NOT $3 OR a.type <> $4)
+		   AND (NOT $3 OR a.type <> $4)`+ownerClause+`
 		 ON CONFLICT (account_id, group_id) DO NOTHING`,
-		sourceGroupID,
-		groupIn.ID,
-		groupIn.RequireOAuthOnly,
-		service.AccountTypeAPIKey,
+		args...,
 	)
 	if err != nil {
 		return err
@@ -274,7 +301,7 @@ func (r *groupRepository) GetByID(ctx context.Context, id int64) (*service.Group
 
 func (r *groupRepository) GetByIDLite(ctx context.Context, id int64) (*service.Group, error) {
 	// AccountCount is intentionally not loaded here; use GetByID when needed.
-	m, err := r.client.Group.Query().
+	m, err := scopedGroupQuery(ctx, r.client.Group.Query()).
 		Where(group.IDEQ(id)).
 		Only(ctx)
 	if err != nil {
@@ -284,6 +311,12 @@ func (r *groupRepository) GetByIDLite(ctx context.Context, id int64) (*service.G
 }
 
 func (r *groupRepository) Update(ctx context.Context, groupIn *service.Group) error {
+	if err := requireOwnedGroups(ctx, r.sql, groupIn.ID); err != nil {
+		return err
+	}
+	if err := validateOwnedGroupReferences(ctx, r.client, groupIn); err != nil {
+		return err
+	}
 	modelPricing, err := json.Marshal(groupIn.ModelPricing)
 	if err != nil {
 		return fmt.Errorf("marshal group model pricing: %w", err)
@@ -457,6 +490,9 @@ func (r *groupRepository) Update(ctx context.Context, groupIn *service.Group) er
 }
 
 func (r *groupRepository) Delete(ctx context.Context, id int64) error {
+	if err := requireOwnedGroups(ctx, r.sql, id); err != nil {
+		return err
+	}
 	_, err := r.client.Group.Delete().Where(group.IDEQ(id)).Exec(ctx)
 	if err != nil {
 		return translatePersistenceError(err, service.ErrGroupNotFound, nil)
@@ -472,12 +508,12 @@ func (r *groupRepository) List(ctx context.Context, params pagination.Pagination
 }
 
 func (r *groupRepository) ListWithFilters(ctx context.Context, params pagination.PaginationParams, platform, status, search string, isExclusive *bool) ([]service.Group, *pagination.PaginationResult, error) {
-	q := r.client.Group.Query()
+	q := scopedGroupQuery(ctx, r.client.Group.Query())
 	return r.listWithFiltersQuery(ctx, q, params, platform, status, search, isExclusive)
 }
 
 func (r *groupRepository) ListBindableWithFilters(ctx context.Context, params pagination.PaginationParams, platform, status, search string, isExclusive *bool) ([]service.Group, *pagination.PaginationResult, error) {
-	q := r.client.Group.Query().Where(group.PlatformNEQ(service.PlatformComposite))
+	q := scopedGroupQuery(ctx, r.client.Group.Query()).Where(group.PlatformNEQ(service.PlatformComposite))
 	return r.listWithFiltersQuery(ctx, q, params, platform, status, search, isExclusive)
 }
 
@@ -606,7 +642,7 @@ func (r *groupRepository) listWithAccountCountSort(ctx context.Context, q *dbent
 		pageIdx[e.id] = i
 	}
 
-	groups, err := r.client.Group.Query().
+	groups, err := scopedGroupQuery(ctx, r.client.Group.Query()).
 		Where(group.IDIn(pageIDs...)).
 		All(ctx)
 	if err != nil {
@@ -683,7 +719,7 @@ func groupListOrder(params pagination.PaginationParams) []func(*entsql.Selector)
 }
 
 func (r *groupRepository) ListActive(ctx context.Context) ([]service.Group, error) {
-	groups, err := r.client.Group.Query().
+	groups, err := scopedGroupQuery(ctx, r.client.Group.Query()).
 		Where(group.StatusEQ(service.StatusActive)).
 		Order(dbent.Asc(group.FieldSortOrder), dbent.Asc(group.FieldID)).
 		All(ctx)
@@ -713,7 +749,8 @@ func (r *groupRepository) ListActive(ctx context.Context) ([]service.Group, erro
 }
 
 func (r *groupRepository) ListActiveIDs(ctx context.Context) ([]int64, error) {
-	if r.sql != nil {
+	_, scoped := ownership.UserID(ctx)
+	if r.sql != nil && !scoped {
 		rows, err := r.sql.QueryContext(ctx, `
 			SELECT id
 			FROM groups
@@ -740,7 +777,7 @@ func (r *groupRepository) ListActiveIDs(ctx context.Context) ([]int64, error) {
 		return ids, nil
 	}
 
-	groups, err := r.client.Group.Query().
+	groups, err := scopedGroupQuery(ctx, r.client.Group.Query()).
 		Where(group.StatusEQ(service.StatusActive)).
 		Select(group.FieldID).
 		Order(dbent.Asc(group.FieldSortOrder), dbent.Asc(group.FieldID)).
@@ -756,7 +793,7 @@ func (r *groupRepository) ListActiveIDs(ctx context.Context) ([]int64, error) {
 }
 
 func (r *groupRepository) ListActiveByPlatform(ctx context.Context, platform string) ([]service.Group, error) {
-	groups, err := r.client.Group.Query().
+	groups, err := scopedGroupQuery(ctx, r.client.Group.Query()).
 		Where(group.StatusEQ(service.StatusActive), group.PlatformEQ(platform)).
 		Order(dbent.Asc(group.FieldSortOrder), dbent.Asc(group.FieldID)).
 		All(ctx)
@@ -786,12 +823,26 @@ func (r *groupRepository) ListActiveByPlatform(ctx context.Context, platform str
 }
 
 func (r *groupRepository) ExistsByName(ctx context.Context, name string) (bool, error) {
-	return r.client.Group.Query().Where(group.NameEQ(name)).Exist(ctx)
+	return scopedGroupQuery(ctx, r.client.Group.Query()).Where(group.NameEQ(name)).Exist(ctx)
 }
 
 // ExistsByIDs 批量检查分组是否存在（仅检查未软删除记录）。
 // 返回结构：map[groupID]exists。
 func (r *groupRepository) ExistsByIDs(ctx context.Context, ids []int64) (map[int64]bool, error) {
+	if _, scoped := ownership.UserID(ctx); scoped {
+		groups, err := scopedGroupQuery(ctx, r.client.Group.Query()).Where(group.IDIn(ids...)).Select(group.FieldID).All(ctx)
+		if err != nil {
+			return nil, err
+		}
+		result := make(map[int64]bool, len(ids))
+		for _, id := range ids {
+			result[id] = false
+		}
+		for _, g := range groups {
+			result[g.ID] = true
+		}
+		return result, nil
+	}
 	result := make(map[int64]bool, len(ids))
 	if len(ids) == 0 {
 		return result, nil
@@ -838,6 +889,13 @@ func (r *groupRepository) ExistsByIDs(ctx context.Context, ids []int64) (map[int
 }
 
 func (r *groupRepository) GetAccountCount(ctx context.Context, groupID int64) (total int64, active int64, err error) {
+	if _, scoped := ownership.UserID(ctx); scoped {
+		if err := requireOwnedGroups(ctx, r.sql, groupID); err != nil {
+			return 0, 0, err
+		}
+		counts, err := r.loadAccountCounts(ctx, []int64{groupID})
+		return counts[groupID].Total, counts[groupID].Active, err
+	}
 	var rateLimited int64
 	err = scanSingleRow(ctx, r.sql,
 		fmt.Sprintf(`SELECT
@@ -851,6 +909,9 @@ func (r *groupRepository) GetAccountCount(ctx context.Context, groupID int64) (t
 }
 
 func (r *groupRepository) DeleteAccountGroupsByGroupID(ctx context.Context, groupID int64) (int64, error) {
+	if err := requireOwnedGroups(ctx, r.sql, groupID); err != nil {
+		return 0, err
+	}
 	res, err := r.sql.ExecContext(ctx, "DELETE FROM account_groups WHERE group_id = $1", groupID)
 	if err != nil {
 		return 0, err
@@ -871,6 +932,9 @@ func (r *groupRepository) DeleteCascadeIfEmpty(ctx context.Context, id int64) ([
 }
 
 func (r *groupRepository) deleteCascade(ctx context.Context, id int64, requireEmpty bool) ([]int64, error) {
+	if err := requireOwnedGroups(ctx, r.sql, id); err != nil {
+		return nil, err
+	}
 	// 使用 ent 事务统一包裹：避免手工基于 *sql.Tx 构造 ent client 带来的驱动断言问题，
 	// 同时保证级联删除的原子性。
 	tx, err := r.client.Tx(ctx)
@@ -1041,6 +1105,13 @@ func (r *groupRepository) loadAccountCounts(ctx context.Context, groupIDs []int6
 		return counts, nil
 	}
 
+	ownerClause := ""
+	args := []any{pq.Array(groupIDs)}
+	if userID, scoped := ownership.UserID(ctx); scoped {
+		ownerClause = ` AND a.id IN (SELECT account_id FROM custom_user_accounts WHERE user_id = $2)
+			AND ag.group_id IN (SELECT group_id FROM custom_user_groups WHERE user_id = $2)`
+		args = append(args, userID)
+	}
 	rows, err := r.sql.QueryContext(
 		ctx,
 		fmt.Sprintf(`SELECT ag.group_id,
@@ -1049,9 +1120,9 @@ func (r *groupRepository) loadAccountCounts(ctx context.Context, groupIDs []int6
 			COUNT(*) FILTER (WHERE %s) AS rate_limited
 		FROM account_groups ag
 		JOIN accounts a ON a.id = ag.account_id
-		WHERE ag.group_id = ANY($1)
+		WHERE ag.group_id = ANY($1)`+ownerClause+`
 		GROUP BY ag.group_id`, groupAccountAvailableSQL, groupAccountTemporarilyLimitedSQL),
-		pq.Array(groupIDs),
+		args...,
 	)
 	if err != nil {
 		return nil, err
@@ -1084,10 +1155,17 @@ func (r *groupRepository) GetAccountIDsByGroupIDs(ctx context.Context, groupIDs 
 		return nil, nil
 	}
 
+	ownerClause := ""
+	args := []any{pq.Array(groupIDs)}
+	if userID, scoped := ownership.UserID(ctx); scoped {
+		ownerClause = ` AND account_id IN (SELECT account_id FROM custom_user_accounts WHERE user_id = $2)
+			AND group_id IN (SELECT group_id FROM custom_user_groups WHERE user_id = $2)`
+		args = append(args, userID)
+	}
 	rows, err := r.sql.QueryContext(
 		ctx,
-		"SELECT DISTINCT account_id FROM account_groups WHERE group_id = ANY($1) ORDER BY account_id",
-		pq.Array(groupIDs),
+		"SELECT DISTINCT account_id FROM account_groups WHERE group_id = ANY($1)"+ownerClause+" ORDER BY account_id",
+		args...,
 	)
 	if err != nil {
 		return nil, err
@@ -1111,6 +1189,12 @@ func (r *groupRepository) GetAccountIDsByGroupIDs(ctx context.Context, groupIDs 
 
 // BindAccountsToGroup 将多个账号绑定到指定分组（批量插入，忽略已存在的绑定）
 func (r *groupRepository) BindAccountsToGroup(ctx context.Context, groupID int64, accountIDs []int64) error {
+	if err := requireOwnedGroups(ctx, r.sql, groupID); err != nil {
+		return err
+	}
+	if err := requireOwnedAccounts(ctx, r.sql, accountIDs...); err != nil {
+		return err
+	}
 	if len(accountIDs) == 0 {
 		return nil
 	}

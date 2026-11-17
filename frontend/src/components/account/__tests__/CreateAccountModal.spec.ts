@@ -200,6 +200,20 @@ async function openCodexImportStep(toggleClicks = 0) {
 }
 
 describe('CreateAccountModal OpenAI long-context billing', () => {
+  it('lets a normal user create an account with global admin controls hidden', async () => {
+    localStorage.setItem('auth_user', JSON.stringify({ id: 7, role: 'user' }))
+    try {
+      const wrapper = await submitApiKeyAccount('openai')
+      expect(createAccountMock).toHaveBeenCalledTimes(1)
+      expect(createAccountMock.mock.calls[0]?.[0]?.name).toBe('openai account')
+      expect(wrapper.text()).not.toContain('admin.accounts.proxy')
+      expect(wrapper.text()).not.toContain('admin.accounts.quotaControl.tlsFingerprint.label')
+      wrapper.unmount()
+    } finally {
+      localStorage.removeItem('auth_user')
+    }
+  })
+
   beforeEach(() => {
     authIsSimpleMode.value = true
     createAccountMock.mockReset().mockResolvedValue({ id: 42, platform: 'openai', type: 'apikey' })

@@ -13,8 +13,13 @@ import {
   shouldMarkUserUIRequest,
 } from './adminUIRequest'
 import { refreshAuthTokens } from './tokenRefresh'
-import { getAPIBaseURL } from './url'
-export { buildApiUrl, buildGatewayUrl } from './url'
+import { buildApiUrl as buildBaseApiUrl, getAPIBaseURL } from './url'
+import { isUserManagementSession, resolveUserManagementURL } from './userManagement'
+export { buildGatewayUrl } from './url'
+
+export function buildApiUrl(path: string): string {
+  return buildBaseApiUrl(resolveUserManagementURL(path, isUserManagementSession() ? 'user' : undefined))
+}
 
 // ==================== Axios Instance Configuration ====================
 
@@ -40,6 +45,9 @@ const getUserTimezone = (): string => {
 
 apiClient.interceptors.request.use(
   (config: InternalAxiosRequestConfig) => {
+    if (config.url && isUserManagementSession()) {
+      config.url = resolveUserManagementURL(config.url, 'user')
+    }
     // Attach token from localStorage
     const token = localStorage.getItem('auth_token')
     if (token && config.headers) {

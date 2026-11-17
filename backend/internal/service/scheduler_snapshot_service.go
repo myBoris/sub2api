@@ -234,7 +234,8 @@ func (s *SchedulerSnapshotService) ListSchedulableAccounts(ctx context.Context, 
 		if err != nil {
 			logger.LegacyPrintf("service.scheduler_snapshot", "[Scheduler] cache read failed: bucket=%s err=%v", bucket.String(), err)
 		} else if hit {
-			return cached, useMixed, nil
+			cached, err = s.filterOwnedGatewaySnapshotAccounts(ctx, bucket.GroupID, cached)
+			return cached, useMixed, err
 		}
 	}
 
@@ -242,7 +243,8 @@ func (s *SchedulerSnapshotService) ListSchedulableAccounts(ctx context.Context, 
 	if err != nil {
 		return nil, useMixed, err
 	}
-	return accounts, useMixed, nil
+	accounts, err = s.filterOwnedGatewaySnapshotAccounts(ctx, bucket.GroupID, accounts)
+	return accounts, useMixed, err
 }
 
 // readSnapshotAccounts 读取 bucket 快照，只返回当前可调度的账号；缓存实现能直接返回值切片时直接使用该切片。
@@ -358,7 +360,7 @@ func (s *SchedulerSnapshotService) GetAccount(ctx context.Context, accountID int
 		if err != nil {
 			logger.LegacyPrintf("service.scheduler_snapshot", "[Scheduler] account cache read failed: id=%d err=%v", accountID, err)
 		} else if account != nil {
-			return account, nil
+			return s.refreshOwnedGatewayAccountGroups(ctx, account)
 		}
 	}
 

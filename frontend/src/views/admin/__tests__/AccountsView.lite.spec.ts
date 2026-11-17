@@ -15,7 +15,9 @@ const {
   getAllGroups,
   refreshCredentials,
   showError,
-  showWarning
+  showWarning,
+  listResourceOwners,
+  authState
 } = vi.hoisted(() => ({
   listAccounts: vi.fn(),
   listWithEtag: vi.fn(),
@@ -26,8 +28,12 @@ const {
   getAllGroups: vi.fn(),
   refreshCredentials: vi.fn(),
   showError: vi.fn(),
-  showWarning: vi.fn()
+  showWarning: vi.fn(),
+  listResourceOwners: vi.fn(),
+  authState: { token: 'test-token', isSimpleMode: false, isAdmin: false }
 }))
+
+vi.mock('@/api/resourceOwnership', () => ({ listResourceOwners, updateResourceOwner: vi.fn() }))
 
 vi.mock('@/api/admin', () => ({
   adminAPI: {
@@ -53,7 +59,7 @@ vi.mock('@/stores/app', () => ({
 }))
 
 vi.mock('@/stores/auth', () => ({
-  useAuthStore: () => ({ token: 'test-token', isSimpleMode: false })
+  useAuthStore: () => authState
 }))
 
 vi.mock('vue-i18n', async () => {
@@ -62,10 +68,12 @@ vi.mock('vue-i18n', async () => {
 })
 
 const DataTableStub = defineComponent({
-  props: { data: { type: Array, default: () => [] }, loading: Boolean },
+  props: { data: { type: Array, default: () => [] }, loading: Boolean, columns: Array },
   template: `
     <div>
+      <div data-test="columns">{{ columns.map(col => col.key).join(',') }}</div>
       <template v-if="!loading"><div v-for="row in data" :key="row.id" :data-account-name="row.name">
+        <slot name="cell-owner" :row="row" />
         <slot name="cell-groups" :row="row" />
         <slot name="cell-actions" :row="row" />
       </div></template>
@@ -159,6 +167,9 @@ const fullAccount = {
 describe('admin AccountsView lite account list', () => {
   beforeEach(() => {
     localStorage.clear()
+    authState.isSimpleMode = false
+    authState.isAdmin = false
+    listResourceOwners.mockReset().mockResolvedValue([{ resource_id: 42, user_id: 7, email: 'alice@example.test', username: 'Alice' }])
     listAccounts.mockReset().mockResolvedValue({ items: [listRow], total: 1, page: 1, page_size: 20, pages: 1 })
     listWithEtag.mockReset().mockResolvedValue({ notModified: true, etag: 'compact-etag', data: null })
     getById.mockReset().mockResolvedValue(fullAccount)
@@ -186,6 +197,25 @@ describe('admin AccountsView lite account list', () => {
       expect.objectContaining({ lite: '1' }),
       expect.objectContaining({ signal: expect.any(AbortSignal) })
     )
+    wrapper.unmount()
+  })
+
+  it('loads all visible owners in one batch and keeps ownership visible and read-only for ordinary users in simple mode', async () => {
+    authState.isSimpleMode = true
+    localStorage.setItem('account-hidden-columns', JSON.stringify(['owner']))
+    listAccounts.mockResolvedValueOnce({ items: [listRow, { ...listRow, id: 43 }], total: 2, page: 1, page_size: 20, pages: 1 })
+    listResourceOwners.mockResolvedValueOnce([
+      { resource_id: 42, user_id: 7, email: 'alice@example.test', username: 'Alice' },
+      { resource_id: 43, user_id: 7, email: 'alice@example.test', username: 'Alice' },
+    ])
+    const wrapper = mountView()
+    await flushPromises()
+
+    expect(wrapper.get('[data-test="columns"]').text().split(',')).toContain('owner')
+    expect(listResourceOwners).toHaveBeenCalledTimes(1)
+    expect(listResourceOwners).toHaveBeenCalledWith('accounts', [42, 43], expect.any(AbortSignal))
+    expect(wrapper.get('[data-account-name="compact row"]').text()).toContain('Alice')
+    expect(wrapper.find('[aria-label="common.resourceOwnership.edit"]').exists()).toBe(false)
     wrapper.unmount()
   })
 

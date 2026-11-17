@@ -501,6 +501,10 @@ func (s *APIKeyService) Create(ctx context.Context, userID int64, req CreateAPIK
 	if err != nil {
 		return nil, fmt.Errorf("get user: %w", err)
 	}
+	ownershipEnforced, err := s.validateOwnedGroup(ctx, user, req.GroupID)
+	if err != nil {
+		return nil, err
+	}
 
 	// 验证 IP 白名单格式
 	if len(req.IPWhitelist) > 0 {
@@ -524,7 +528,7 @@ func (s *APIKeyService) Create(ctx context.Context, userID int64, req CreateAPIK
 		}
 
 		// 检查用户是否可以绑定该分组
-		if !s.canUserBindGroup(ctx, user, group) {
+		if !ownershipEnforced && !s.canUserBindGroup(ctx, user, group) {
 			return nil, ErrGroupNotAllowed
 		}
 	}
@@ -735,7 +739,7 @@ func (s *APIKeyService) GetByID(ctx context.Context, id int64) (*APIKey, error) 
 }
 
 // GetByKey 根据Key字符串获取API Key（用于认证）
-func (s *APIKeyService) GetByKey(ctx context.Context, key string) (*APIKey, error) {
+func (s *APIKeyService) getByKey(ctx context.Context, key string) (*APIKey, error) {
 	// 非 UTF-8 的 key 不可能存在（生成和自定义的 key 都是 ASCII），且 Postgres 会以
 	// invalid byte sequence 拒绝该参数；直接按不存在处理，避免返回 500。
 	if len(key) == 0 || len(key) > MaxAPIKeyCredentialBytes || !utf8.ValidString(key) {
@@ -839,13 +843,17 @@ func (s *APIKeyService) Update(ctx context.Context, id int64, userID int64, req 
 		if err != nil {
 			return nil, fmt.Errorf("get user: %w", err)
 		}
+		ownershipEnforced, err := s.validateOwnedGroup(ctx, user, req.GroupID)
+		if err != nil {
+			return nil, err
+		}
 
 		group, err := s.groupRepo.GetByID(ctx, *req.GroupID)
 		if err != nil {
 			return nil, fmt.Errorf("get group: %w", err)
 		}
 
-		if !s.canUserBindGroup(ctx, user, group) {
+		if !ownershipEnforced && !s.canUserBindGroup(ctx, user, group) {
 			return nil, ErrGroupNotAllowed
 		}
 
@@ -1059,6 +1067,18 @@ func (s *APIKeyService) GetAvailableGroups(ctx context.Context, userID int64) ([
 	if err != nil {
 		return nil, fmt.Errorf("list active groups: %w", err)
 	}
+	if owned, enforced, err := s.ownedGroupIDs(ctx, user); enforced {
+		if err != nil {
+			return nil, err
+		}
+		available := make([]Group, 0, len(owned))
+		for _, group := range allGroups {
+			if _, ok := owned[group.ID]; ok {
+				available = append(available, group)
+			}
+		}
+		return available, nil
+	}
 
 	// 获取用户的所有有效订阅
 	activeSubscriptions, err := s.userSubRepo.ListActiveByUserID(ctx, userID)
@@ -1111,6 +1131,9 @@ func (s *APIKeyService) GetUserGroupVisibility(ctx context.Context, userID int64
 	if err != nil {
 		return nil, false, fmt.Errorf("get user: %w", err)
 	}
+	if owned, enforced, err := s.ownedGroupIDs(ctx, user); enforced {
+		return owned, true, err
+	}
 	allowed := make(map[int64]struct{}, len(user.AllowedGroups))
 	for _, id := range user.AllowedGroups {
 		allowed[id] = struct{}{}
@@ -1135,7 +1158,7 @@ func (s *APIKeyService) GetUserGroupRates(ctx context.Context, userID int64) (ma
 	if err != nil {
 		return nil, fmt.Errorf("get user group rates: %w", err)
 	}
-	return rates, nil
+	return s.filterOwnedGroupRates(ctx, userID, rates)
 }
 
 // CheckAPIKeyQuotaAndExpiry checks if the API key is valid for use (not expired, quota not exhausted)

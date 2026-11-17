@@ -16,6 +16,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/pkg/adminaccess"
 	httppool "github.com/Wei-Shaw/sub2api/internal/pkg/httpclient"
 	openaipkg "github.com/Wei-Shaw/sub2api/internal/pkg/openai"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/ownership"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/pagination"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/timezone"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/tlsfingerprint"
@@ -1011,8 +1012,8 @@ func (s *AccountUsageService) persistOpenAICodexProbeSnapshotContext(ctx context
 		return
 	}
 
-	go func() {
-		updateCtx, updateCancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+	persist := func(base context.Context) {
+		updateCtx, updateCancel := context.WithTimeout(base, 5*time.Second)
 		defer updateCancel()
 		if err := scopedAccountIDAccess(updateCtx, s.accountRepo, accountID, "accounts.usage.read", true); err != nil {
 			return
@@ -1020,7 +1021,14 @@ func (s *AccountUsageService) persistOpenAICodexProbeSnapshotContext(ctx context
 		if err := s.accountRepo.UpdateExtra(updateCtx, accountID, updates); err == nil && adminaccess.RestrictedFromContext(ctx) == nil {
 			notifyOpenAIAutoReset(accountID)
 		}
-	}()
+	}
+	if _, scoped := ownership.UserID(ctx); scoped {
+		// Finish ordinary-user writes while the HTTP ownership guard is held.
+		// Preserve cancellation so a cancelled guard cannot leave a late write.
+		persist(ctx)
+		return
+	}
+	go persist(context.WithoutCancel(ctx))
 }
 
 func extractOpenAICodexProbeUpdates(resp *http.Response) (map[string]any, error) {

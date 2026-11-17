@@ -130,6 +130,18 @@
             }}</span>
           </template>
 
+          <template #cell-owner="{ row }">
+            <ResourceOwnerCell
+              kind="groups"
+              :resource-id="row.id"
+              :owner="resourceOwners.get(row.id)"
+              :loading="ownersLoading"
+              :error="ownersError"
+              :editable="authStore.isAdmin"
+              @updated="handleOwnerUpdated"
+            />
+          </template>
+
           <template #cell-id="{ value }">
             <span class="font-mono text-xs text-gray-500 dark:text-gray-400"
               >#{{ value }}</span
@@ -410,7 +422,7 @@
                 </span>
               </button>
               <button
-                v-if="!authStore.isSimpleMode && row.platform === 'composite'"
+                v-if="authStore.isAdmin && !authStore.isSimpleMode && row.platform === 'composite'"
                 data-testid="group-composite-routes"
                 @click="handleCompositeRoutes(row)"
                 class="flex flex-col items-center gap-0.5 rounded-lg p-1.5 text-gray-500 transition-colors hover:bg-gray-100 hover:text-cyan-600 dark:hover:bg-dark-700 dark:hover:text-cyan-400"
@@ -421,7 +433,7 @@
                 }}</span>
               </button>
               <button
-                v-if="!authStore.isSimpleMode"
+                v-if="authStore.isAdmin && !authStore.isSimpleMode"
                 data-testid="group-rate-multipliers"
                 @click="handleRateMultipliers(row)"
                 class="flex flex-col items-center gap-0.5 rounded-lg p-1.5 text-gray-500 transition-colors hover:bg-gray-100 hover:text-purple-600 dark:hover:bg-dark-700 dark:hover:text-purple-400"
@@ -432,7 +444,7 @@
                 }}</span>
               </button>
               <button
-                v-if="!authStore.isSimpleMode"
+                v-if="authStore.isAdmin && !authStore.isSimpleMode"
                 data-testid="group-rpm-overrides"
                 @click="handleRPMOverrides(row)"
                 class="flex flex-col items-center gap-0.5 rounded-lg p-1.5 text-gray-500 transition-colors hover:bg-gray-100 hover:text-orange-600 dark:hover:bg-dark-700 dark:hover:text-orange-400"
@@ -4325,6 +4337,9 @@ import { useAppStore } from "@/stores/app";
 import { useAuthStore } from "@/stores/auth";
 import { useOnboardingStore } from "@/stores/onboarding";
 import { adminAPI } from "@/api/admin";
+import type { ResourceOwner } from "@/api/resourceOwnership";
+import { useResourceOwners } from "@/composables/useResourceOwners";
+import ResourceOwnerCell from "@/components/common/ResourceOwnerCell.vue";
 import type {
   AdminGroup,
   CodexModelsManifestConfig,
@@ -4513,8 +4528,13 @@ const { t } = useI18n();
 const appStore = useAppStore();
 const authStore = useAuthStore();
 const onboardingStore = useOnboardingStore();
+const { owners: resourceOwners, loading: ownersLoading, error: ownersError, load: loadOwners, setOwner } = useResourceOwners("groups");
+const handleOwnerUpdated = (owner: ResourceOwner) => {
+  setOwner(owner);
+  void loadGroups();
+};
 
-const ALWAYS_VISIBLE_COLUMNS = new Set(["name", "actions"]);
+const ALWAYS_VISIBLE_COLUMNS = new Set(["name", "owner", "actions"]);
 // Default hidden columns (hidden on first load / after schema bumps).
 const DEFAULT_HIDDEN_COLUMNS = ["id"];
 const HIDDEN_COLUMNS_KEY = "group-hidden-columns";
@@ -4534,8 +4554,7 @@ const allColumns = computed<Column[]>(() => {
     { key: "status", label: t("admin.groups.columns.status"), sortable: true },
     { key: "actions", label: t("admin.groups.columns.actions"), sortable: false },
   ];
-  if (authStore.isSimpleMode) return basic;
-  return [
+  const columns: Column[] = authStore.isSimpleMode ? basic : [
     ...basic.slice(0, 3),
     { key: "billing_type", label: t("admin.groups.columns.billingType"), sortable: true },
     { key: "rate_multiplier", label: t("admin.groups.columns.rateMultiplier"), sortable: true },
@@ -4545,6 +4564,8 @@ const allColumns = computed<Column[]>(() => {
     { key: "usage", label: t("admin.groups.columns.usage"), sortable: false },
     ...basic.slice(4),
   ];
+  columns.splice(1, 0, { key: "owner", label: t("common.resourceOwnership.owner"), sortable: false });
+  return columns;
 });
 
 const toggleableColumns = computed(() =>
@@ -4674,7 +4695,7 @@ const exclusiveOptions = computed(() => [
 
 const platformOptions = computed(() =>
   GROUP_PLATFORM_OPTIONS.filter(
-    (option) => !authStore.isSimpleMode || option.value !== "composite",
+    (option) => (authStore.isAdmin && !authStore.isSimpleMode) || option.value !== "composite",
   ),
 );
 
@@ -4725,7 +4746,7 @@ const editStatusOptions = computed(() => [
 
 const subscriptionTypeOptions = computed(() => [
   { value: "standard", label: t("admin.groups.subscription.standard") },
-  { value: "subscription", label: t("admin.groups.subscription.subscription") },
+  ...(authStore.isAdmin ? [{ value: "subscription", label: t("admin.groups.subscription.subscription") }] : []),
 ]);
 
 // 降级分组选项（创建时）- 仅包含 anthropic 平台且未启用 claude_code_only 的分组
@@ -5696,6 +5717,7 @@ const loadGroups = async () => {
     );
     if (signal.aborted) return;
     groups.value = response.items;
+    void loadOwners(response.items.map(group => group.id));
     pagination.total = response.total;
     pagination.pages = response.pages;
     if (hasVisibleUsageSummaryConsumer.value) {

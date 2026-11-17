@@ -851,6 +851,9 @@ func (s *GatewayService) groupFromContext(ctx context.Context, groupID int64) *G
 }
 
 func (s *GatewayService) resolveGroupByID(ctx context.Context, groupID int64) (*Group, error) {
+	if err := s.checkOwnedGatewayGroup(ctx, groupID); err != nil {
+		return nil, err
+	}
 	if group := s.groupFromContext(ctx, groupID); group != nil {
 		return group, nil
 	}

@@ -226,6 +226,9 @@ func (s *GeminiMessagesCompatService) tryStickySessionHit(
 	if err != nil {
 		return nil
 	}
+	if !ownedGatewayStickyAccountAllowed(ctx, groupID, account, s.cfg != nil && s.cfg.RunMode == config.RunModeSimple) {
+		return nil
+	}
 
 	// 检查账号是否需要清理粘性会话
 	// Check if sticky session should be cleared

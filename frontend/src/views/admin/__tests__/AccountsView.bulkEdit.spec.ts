@@ -29,6 +29,11 @@ const {
   showSuccess: vi.fn()
 }))
 
+vi.mock('@/api/resourceOwnership', () => ({
+  listResourceOwners: vi.fn().mockResolvedValue([]),
+  updateResourceOwner: vi.fn()
+}))
+
 vi.mock('@/api/admin', () => ({
   adminAPI: {
     accounts: {
@@ -63,7 +68,8 @@ vi.mock('@/stores/app', () => ({
 
 vi.mock('@/stores/auth', () => ({
   useAuthStore: () => ({
-    token: 'test-token'
+    token: 'test-token',
+    isAdmin: true
   })
 }))
 

@@ -1,5 +1,15 @@
 export default {
   common: {
+    resourceOwnership: {
+      owner: 'Owner',
+      unassigned: 'Unassigned (admins only)',
+      edit: 'Change owner',
+      searchPlaceholder: 'Search user email or username',
+      transferHint: 'Changing the owner removes group links to resources owned by other users. Existing API keys will be checked against the new group ownership. Only admins can manage unassigned resources.',
+      loadFailed: 'Failed to load owner',
+      searchFailed: 'User search failed. Please try again.',
+      saveFailed: 'Failed to change owner',
+    },
     loading: 'Loading...',
     submitting: 'Submitting...',
     justNow: 'just now',

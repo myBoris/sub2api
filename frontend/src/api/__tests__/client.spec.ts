@@ -28,6 +28,56 @@ describe('API Client', () => {
   // --- 请求拦截器 ---
 
   describe('请求拦截器', () => {
+    it('routes normal-user management requests through the ownership-scoped API', async () => {
+      localStorage.setItem('auth_user', JSON.stringify({ id: 7, role: 'user' }))
+      const adapter = vi.fn().mockResolvedValue({
+        status: 200, data: { code: 0, data: {} }, headers: {}, config: {}, statusText: 'OK'
+      })
+      apiClient.defaults.adapter = adapter
+
+      await apiClient.get('/admin/groups/all')
+      await apiClient.put('/admin/accounts/42', { name: 'My account' })
+      await apiClient.post('/admin/openai/oauth/auth-url')
+      await apiClient.get('/admin/resource-ownership/groups', { params: { ids: '1,2' } })
+
+      expect(adapter.mock.calls.map(([config]) => config.url)).toEqual([
+        '/user/managed/groups/all', '/user/managed/accounts/42', '/user/managed/openai/oauth/auth-url',
+        '/user/managed/resource-ownership/groups'
+      ])
+      expect(adapter.mock.calls[0][0].headers.get('X-User-UI-Request')).toBe('1')
+      expect(adapter.mock.calls[0][0].headers.get('X-Admin-UI-Request')).toBeUndefined()
+      const { buildApiUrl } = await import('@/api/client')
+      expect(buildApiUrl('/admin/accounts/42/test')).toBe('/api/v1/user/managed/accounts/42/test')
+    })
+
+    it('preserves admin access after the current session changes', async () => {
+      const adapter = vi.fn().mockResolvedValue({
+        status: 200, data: { code: 0, data: {} }, headers: {}, config: {}, statusText: 'OK'
+      })
+      apiClient.defaults.adapter = adapter
+      localStorage.setItem('auth_user', JSON.stringify({ id: 7, role: 'user' }))
+      await apiClient.get('/admin/accounts')
+      localStorage.setItem('auth_user', JSON.stringify({ id: 1, role: 'admin' }))
+      await apiClient.get('/admin/accounts')
+
+      expect(adapter.mock.calls.map(([config]) => config.url)).toEqual([
+        '/user/managed/accounts', '/admin/accounts'
+      ])
+    })
+
+    it('does not broaden the normal-user management API to other admin resources', async () => {
+      localStorage.setItem('auth_user', JSON.stringify({ id: 7, role: 'user' }))
+      const adapter = vi.fn().mockResolvedValue({
+        status: 200, data: { code: 0, data: {} }, headers: {}, config: {}, statusText: 'OK'
+      })
+      apiClient.defaults.adapter = adapter
+      await apiClient.get('/admin/users')
+      await apiClient.get('/admin/groups-other')
+      expect(adapter.mock.calls.map(([config]) => config.url)).toEqual([
+        '/admin/users', '/admin/groups-other'
+      ])
+    })
+
     it('规范化相对 API base，避免在回调页拼出相对 v1 路径', async () => {
       vi.resetModules()
       vi.stubEnv('VITE_API_BASE_URL', 'api/v1')

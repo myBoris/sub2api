@@ -10,6 +10,15 @@ vi.mock('vue-i18n', () => ({
 }))
 
 describe('AccountBulkActionsBar', () => {
+  it('keeps explicit selections editable while disabling updates by global filters', () => {
+    const wrapper = mount(AccountBulkActionsBar, {
+      props: { selectedIds: [42], totalResults: 1, selectingAll: false, allResultsSelected: false, allowFiltered: false }
+    })
+    expect(wrapper.text()).toContain('admin.accounts.bulkActions.edit')
+    expect(wrapper.text()).not.toContain('admin.accounts.bulkEdit.submit')
+    wrapper.unmount()
+  })
+
   it('allows selecting all results before any row is selected', async () => {
     const wrapper = mount(AccountBulkActionsBar, {
       props: {

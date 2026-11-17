@@ -757,7 +757,11 @@ function finalizeNav(items: NavItem[]): NavItem[] {
 }
 
 // User navigation items (for regular users)
-const userNavItems = computed((): NavItem[] => finalizeNav(buildSelfNavItems(true)))
+const userNavItems = computed((): NavItem[] => finalizeNav([
+  ...buildSelfNavItems(true),
+  { path: '/groups', label: t('nav.groups'), icon: FolderIcon },
+  { path: '/accounts', label: t('nav.accounts'), icon: GlobeIcon },
+]))
 
 // Personal navigation items (for admin's "My Account" section, without Dashboard).
 // Admins access 可用渠道 from this section just like regular users — there is no

@@ -17,6 +17,11 @@ const {
   getAllGroups: vi.fn()
 }))
 
+vi.mock('@/api/resourceOwnership', () => ({
+  listResourceOwners: vi.fn().mockResolvedValue([]),
+  updateResourceOwner: vi.fn()
+}))
+
 vi.mock('@/api/admin', () => ({
   adminAPI: {
     accounts: {

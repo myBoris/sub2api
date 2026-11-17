@@ -1,5 +1,15 @@
 export default {
   common: {
+    resourceOwnership: {
+      owner: '所属用户',
+      unassigned: '未分配（仅管理员）',
+      edit: '修改所属用户',
+      searchPlaceholder: '搜索用户邮箱或用户名',
+      transferHint: '更改所属用户会解除与其他用户资源的分组关联；已有 API 密钥将按新的分组归属校验。未分配的资源仅管理员可以管理。',
+      loadFailed: '所属用户加载失败',
+      searchFailed: '用户搜索失败，请重试',
+      saveFailed: '所属用户修改失败',
+    },
     loading: '加载中...',
     submitting: '提交中...',
     justNow: '刚刚',

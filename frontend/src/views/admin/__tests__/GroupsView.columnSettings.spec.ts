@@ -3,6 +3,7 @@ import { flushPromises, mount } from '@vue/test-utils'
 
 import type { AdminGroup } from '@/types'
 import GroupsView from '../GroupsView.vue'
+import Pagination from '@/components/common/Pagination.vue'
 
 const {
   listGroups,
@@ -17,6 +18,7 @@ const {
   isCurrentStep,
   nextStep,
   authState,
+  listResourceOwners,
 } = vi.hoisted(() => ({
   listGroups: vi.fn(),
   getAllGroups: vi.fn(),
@@ -29,10 +31,12 @@ const {
   showSuccess: vi.fn(),
   isCurrentStep: vi.fn(),
   nextStep: vi.fn(),
-  authState: { isSimpleMode: false },
+  authState: { isSimpleMode: false, isAdmin: true },
+  listResourceOwners: vi.fn(),
 }))
 
 const messages: Record<string, string> = {
+  'common.resourceOwnership.owner': 'Owner',
   'admin.groups.columnSettings': 'Column Settings',
   'admin.groups.columns.name': 'Name',
   'admin.groups.columns.id': 'ID',
@@ -49,6 +53,8 @@ const messages: Record<string, string> = {
   'admin.groups.usageYesterday': 'Yesterday',
   'admin.groups.usageTotal': 'Total',
 }
+
+vi.mock('@/api/resourceOwnership', () => ({ listResourceOwners, updateResourceOwner: vi.fn() }))
 
 vi.mock('@/api/admin', () => ({
   adminAPI: {
@@ -160,6 +166,7 @@ const DataTableStub = {
     <div>
       <div data-test="columns">{{ columns.map((col) => col.key).join(',') }}</div>
       <div data-test="rows">{{ data.map((row) => row.name).join(',') }}</div>
+      <div v-for="row in data" :key="row.id" data-test="owner-cell"><slot name="cell-owner" :row="row" /></div>
       <div v-if="data.length" data-test="usage-cell">
         <slot name="cell-usage" :row="data[0]" />
       </div>
@@ -249,6 +256,8 @@ describe('admin GroupsView column settings', () => {
     isCurrentStep.mockReset()
     nextStep.mockReset()
     authState.isSimpleMode = false
+    authState.isAdmin = true
+    listResourceOwners.mockReset().mockResolvedValue([{ resource_id: 1, user_id: 7, email: 'alice@example.test', username: 'Alice' }])
 
     listGroups.mockResolvedValue({
       items: [createGroup()],
@@ -283,6 +292,44 @@ describe('admin GroupsView column settings', () => {
     expect(wrapper.find('select').text()).not.toContain('admin.groups.allGroups')
   })
 
+  it('batches owners for the visible page and keeps ownership visible and read-only for ordinary users in simple mode', async () => {
+    authState.isSimpleMode = true
+    authState.isAdmin = false
+    localStorage.setItem('group-hidden-columns', JSON.stringify(['owner']))
+    localStorage.setItem('group-column-settings-version', '2')
+    listGroups.mockResolvedValueOnce({ items: [createGroup(), createGroup({ id: 2 })], total: 2, page: 1, page_size: 20, pages: 1 })
+    listResourceOwners.mockResolvedValueOnce([
+      { resource_id: 1, user_id: 7, email: 'alice@example.test', username: 'Alice' },
+      { resource_id: 2, user_id: 7, email: 'alice@example.test', username: 'Alice' },
+    ])
+    const wrapper = await mountView()
+
+    expect(columnKeys(wrapper)).toContain('owner')
+    expect(listResourceOwners).toHaveBeenCalledTimes(1)
+    expect(listResourceOwners).toHaveBeenCalledWith('groups', [1, 2], expect.any(AbortSignal))
+    expect(wrapper.findAll('[data-test="owner-cell"]').map(cell => cell.text())).toEqual([
+      expect.stringContaining('Alice'), expect.stringContaining('Alice'),
+    ])
+    expect(wrapper.find('[aria-label="common.resourceOwnership.edit"]').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('fetches only the next visible page ownership when pagination changes', async () => {
+    listGroups.mockResolvedValueOnce({ items: [createGroup()], total: 2, page: 1, page_size: 1, pages: 2 })
+    listGroups.mockResolvedValueOnce({ items: [createGroup({ id: 2, name: 'Next page' })], total: 2, page: 2, page_size: 1, pages: 2 })
+    listResourceOwners.mockResolvedValueOnce([{ resource_id: 1, user_id: 7, email: 'alice@example.test', username: 'Alice' }])
+    listResourceOwners.mockResolvedValueOnce([{ resource_id: 2, user_id: 9, email: 'bob@example.test', username: 'Bob' }])
+    const wrapper = await mountView()
+    wrapper.getComponent(Pagination).vm.$emit('update:page', 2)
+    await flushPromises()
+
+    expect(listResourceOwners).toHaveBeenCalledTimes(2)
+    expect(listResourceOwners).toHaveBeenLastCalledWith('groups', [2], expect.any(AbortSignal))
+    expect(wrapper.get('[data-test="owner-cell"]').text()).toContain('Bob')
+    expect(wrapper.get('[data-test="owner-cell"]').text()).not.toContain('Alice')
+    wrapper.unmount()
+  })
+
   afterEach(() => {
     localStorage.clear()
   })
@@ -292,6 +339,7 @@ describe('admin GroupsView column settings', () => {
 
     expect(columnKeys(wrapper)).toEqual([
       'name',
+      'owner',
       'platform',
       'billing_type',
       'rate_multiplier',
@@ -317,6 +365,7 @@ describe('admin GroupsView column settings', () => {
 
     expect(columnKeys(wrapper)).toEqual([
       'name',
+      'owner',
       'id',
       'platform',
       'billing_type',
@@ -336,6 +385,7 @@ describe('admin GroupsView column settings', () => {
 
     expect(columnKeys(wrapper)).toEqual([
       'name',
+      'owner',
       'platform',
       'billing_type',
       'rate_multiplier',
@@ -359,6 +409,7 @@ describe('admin GroupsView column settings', () => {
 
     expect(columnKeys(wrapper)).toEqual([
       'name',
+      'owner',
       'platform',
       'billing_type',
       'rate_multiplier',
@@ -381,6 +432,7 @@ describe('admin GroupsView column settings', () => {
 
     expect(columnKeys(wrapper)).toEqual([
       'name',
+      'owner',
       'id',
       'platform',
       'billing_type',
