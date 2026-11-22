@@ -134,6 +134,12 @@ func (h *OpenAIGatewayHandler) GrokRealtime(c *gin.Context) {
 	}
 	defer release()
 	defer func() { _ = upstream.Close() }()
+	renewalCtx, renewalCancel, renewalErr := h.gatewayService.WithAccountRenewalContext(c.Request.Context(), selection.Account)
+	if renewalErr != nil {
+		service.WriteAccountRenewalError(c, renewalErr)
+		return
+	}
+	defer renewalCancel()
 
 	conn, err := coderws.Accept(c.Writer, c.Request, &coderws.AcceptOptions{CompressionMode: coderws.CompressionContextTakeover})
 	if err != nil {
@@ -142,8 +148,12 @@ func (h *OpenAIGatewayHandler) GrokRealtime(c *gin.Context) {
 	defer func() { _ = conn.CloseNow() }()
 
 	started := time.Now()
-	audioObserved, proxyErr := h.gatewayService.ProxyGrokRealtimeConn(c.Request.Context(), c, conn, upstream)
+	audioObserved, proxyErr := h.gatewayService.ProxyGrokRealtimeConn(renewalCtx, c, conn, upstream)
 	elapsed := time.Since(started)
+	if service.IsAccountRenewalExpired(context.Cause(renewalCtx)) {
+		_ = conn.Close(coderws.StatusPolicyViolation, service.AccountRenewalExpiredWSReason)
+		return
+	}
 	if proxyErr != nil {
 		reqLog.Info("grok_realtime.proxy_failed", zap.Error(proxyErr))
 		if !isExpectedGrokRealtimeClose(proxyErr) {

@@ -71,23 +71,25 @@ func generateRandomString(n int) string {
 }
 
 type CreateOrderRequest struct {
-	UserID          int64
-	Amount          float64
-	PaymentType     string
-	OpenID          string
-	ClientIP        string
-	IsMobile        bool
-	IsWeChatBrowser bool
-	SrcHost         string
-	SrcURL          string
-	ReturnURL       string
-	PaymentSource   string
-	OrderType       string
-	PlanID          int64
-	Locale          string
+	UserID            int64
+	Amount            float64
+	PaymentType       string
+	OpenID            string
+	ClientIP          string
+	IsMobile          bool
+	IsWeChatBrowser   bool
+	SrcHost           string
+	SrcURL            string
+	ReturnURL         string
+	PaymentSource     string
+	OrderType         string
+	PlanID            int64
+	AccountQuoteToken string
+	Locale            string
 }
 
 type CreateOrderResponse struct {
+	OrderType                     string                          `json:"order_type,omitempty"`
 	OrderID                       int64                           `json:"order_id"`
 	Amount                        float64                         `json:"amount"`
 	PayAmount                     float64                         `json:"pay_amount"`
@@ -201,6 +203,7 @@ type PaymentService struct {
 	resumeService            *PaymentResumeService
 	affiliateService         *AffiliateService
 	notificationEmailService *NotificationEmailService
+	accountBilling           accountBillingPayments
 }
 
 func NewPaymentService(entClient *dbent.Client, registry *payment.Registry, loadBalancer payment.LoadBalancer, redeemService *RedeemService, subscriptionSvc *SubscriptionService, configService *PaymentConfigService, userRepo UserRepository, groupRepo GroupRepository, affiliateService *AffiliateService) *PaymentService {

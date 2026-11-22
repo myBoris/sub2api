@@ -1,0 +1,13 @@
+# Standalone image build and push configuration. Run from the source checkout.
+services:
+  sub2api:
+    image: ancodej/sub2api:latest
+    build:
+      context: .
+      dockerfile: Dockerfile
+      platforms:
+        - ${SUB2API_BUILD_PLATFORM:-linux/amd64}
+      args:
+        VERSION: ${SUB2API_BUILD_VERSION:-}
+        COMMIT: ${SUB2API_BUILD_COMMIT:-local}
+        DATE: ${SUB2API_BUILD_DATE:-}

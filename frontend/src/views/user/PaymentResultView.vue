@@ -60,7 +60,7 @@
               <span class="font-medium text-amber-600 dark:text-amber-400">+${{ orderBonusAmount(order).toFixed(2) }}</span>
             </div>
             <div v-if="hasAmountFields(order) && (order.amount !== order.pay_amount || orderBonusAmount(order) > 0)" class="flex justify-between">
-              <span class="text-gray-500 dark:text-gray-400">{{ t('payment.orders.creditedAmount') }}</span>
+              <span class="text-gray-500 dark:text-gray-400">{{ t(isAccountOrder ? 'payment.account.total' : 'payment.orders.creditedAmount') }}</span>
               <span class="font-medium text-gray-900 dark:text-white">{{ order.order_type === 'balance' ? '$' + order.amount.toFixed(2) : formatGatewayAmount(order.amount) }}</span>
             </div>
             <div v-if="hasPaymentType(order)" class="flex justify-between">
@@ -128,6 +128,7 @@ const authStore = useAuthStore()
 type ResolvedOrder = PaymentOrder | PublicOrderVerifyResult
 
 const order = ref<ResolvedOrder | null>(null)
+const isAccountOrder = computed(() => !!order.value && 'order_type' in order.value && order.value.order_type === 'account')
 const loading = ref(true)
 const currency = ref('CNY')
 
@@ -183,6 +184,7 @@ const isPending = computed(() => {
 
 const statusTitle = computed(() => {
   if (isSuccess.value) {
+    if (order.value && 'order_type' in order.value && order.value.order_type === 'account') return t('payment.result.accountSuccess')
     return t('payment.result.success')
   }
   if (isPending.value) {
@@ -203,6 +205,9 @@ function setResolvedOrder(nextOrder: ResolvedOrder | null): void {
   order.value = nextOrder
   if (nextOrder && 'currency' in nextOrder && nextOrder.currency) {
     currency.value = normalizePaymentCurrency(nextOrder.currency)
+  }
+  if (nextOrder && 'order_type' in nextOrder && nextOrder.order_type === 'account' && normalizeOrderStatus(nextOrder.status) === 'COMPLETED') {
+    window.dispatchEvent(new Event('account-billing-paid'))
   }
   refreshUserBalanceForSuccessfulOrder(nextOrder)
 }

@@ -210,6 +210,9 @@ func (s *PaymentService) PrepareRefund(ctx context.Context, oid int64, amt float
 	if err != nil {
 		return nil, nil, infraerrors.NotFound("NOT_FOUND", "order not found")
 	}
+	if o.OrderType == accountPaymentOrderType {
+		return nil, nil, infraerrors.BadRequest("ACCOUNT_REFUND_MANUAL_REQUIRED", "账号支付涉及账号账期，请联系管理员人工核对退款及续费记录")
+	}
 	// REFUND_PENDING 只能通过 QueryAndFinalizeRefund 收敛：重新发起会重复扣减并向网关重复退款。
 	ok := []string{OrderStatusCompleted, OrderStatusRefundRequested, OrderStatusRefundFailed}
 	if !psSliceContains(ok, o.Status) {

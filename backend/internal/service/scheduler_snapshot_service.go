@@ -127,6 +127,7 @@ type schedulerActiveGroupIDLister interface {
 }
 
 type SchedulerSnapshotService struct {
+	accountRenewalGuard          *AccountRenewalGuard
 	cache                        SchedulerCache
 	outboxRepo                   SchedulerOutboxRepository
 	accountRepo                  AccountRepository
@@ -235,6 +236,9 @@ func (s *SchedulerSnapshotService) ListSchedulableAccounts(ctx context.Context, 
 			logger.LegacyPrintf("service.scheduler_snapshot", "[Scheduler] cache read failed: bucket=%s err=%v", bucket.String(), err)
 		} else if hit {
 			cached, err = s.filterOwnedGatewaySnapshotAccounts(ctx, bucket.GroupID, cached)
+			if err == nil {
+				cached, err = s.accountRenewalGuard.FilterAccounts(ctx, cached)
+			}
 			return cached, useMixed, err
 		}
 	}
@@ -244,6 +248,9 @@ func (s *SchedulerSnapshotService) ListSchedulableAccounts(ctx context.Context, 
 		return nil, useMixed, err
 	}
 	accounts, err = s.filterOwnedGatewaySnapshotAccounts(ctx, bucket.GroupID, accounts)
+	if err == nil {
+		accounts, err = s.accountRenewalGuard.FilterAccounts(ctx, accounts)
+	}
 	return accounts, useMixed, err
 }
 
@@ -360,6 +367,9 @@ func (s *SchedulerSnapshotService) GetAccount(ctx context.Context, accountID int
 		if err != nil {
 			logger.LegacyPrintf("service.scheduler_snapshot", "[Scheduler] account cache read failed: id=%d err=%v", accountID, err)
 		} else if account != nil {
+			if err := s.accountRenewalGuard.CheckAccount(ctx, account); err != nil {
+				return nil, err
+			}
 			return s.refreshOwnedGatewayAccountGroups(ctx, account)
 		}
 	}
@@ -369,7 +379,14 @@ func (s *SchedulerSnapshotService) GetAccount(ctx context.Context, accountID int
 	}
 	fallbackCtx, cancel := s.withFallbackTimeout(ctx)
 	defer cancel()
-	return s.accountRepo.GetByID(fallbackCtx, accountID)
+	account, err := s.accountRepo.GetByID(fallbackCtx, accountID)
+	if err == nil {
+		err = s.accountRenewalGuard.CheckAccount(fallbackCtx, account)
+	}
+	if err != nil {
+		return nil, err
+	}
+	return account, nil
 }
 
 // GetGroupByID 获取分组信息（供调度器使用）

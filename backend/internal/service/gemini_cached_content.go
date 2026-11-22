@@ -635,10 +635,11 @@ func (e *GeminiCachedContentUpstreamError) RetryableOnOtherAccount() bool {
 
 // GeminiCachedContentService 管理显式缓存的上游资源与网关绑定。
 type GeminiCachedContentService struct {
-	repo   GeminiCachedContentRepository
-	compat *GeminiMessagesCompatService
-	cfg    *config.Config
-	now    func() time.Time
+	accountRenewalGuard *AccountRenewalGuard
+	repo                GeminiCachedContentRepository
+	compat              *GeminiMessagesCompatService
+	cfg                 *config.Config
+	now                 func() time.Time
 
 	startOnce sync.Once
 	stopOnce  sync.Once
@@ -967,6 +968,9 @@ func GeminiCachedContentUpstreamModelResource(account *Account, mappedModel stri
 
 // CreateUpstream 在账号上创建上游缓存。
 func (s *GeminiCachedContentService) CreateUpstream(ctx context.Context, account *Account, req *GeminiCachedContentCreateRequest, mappedModel, publicID string, ttl time.Duration) (*GeminiCachedContentUpstream, error) {
+	if err := s.accountRenewalGuard.CheckAccount(ctx, account); err != nil {
+		return nil, geminiCachedContentNotSent(err)
+	}
 	upstreamModel, err := GeminiCachedContentUpstreamModelResource(account, mappedModel)
 	if err != nil {
 		return nil, err
@@ -1006,6 +1010,9 @@ func (s *GeminiCachedContentService) CreateUpstream(ctx context.Context, account
 
 // PatchUpstream 把上游缓存的有效期改为自现在起 ttl。
 func (s *GeminiCachedContentService) PatchUpstream(ctx context.Context, account *Account, record *GeminiCachedContent, ttl time.Duration) (*GeminiCachedContentUpstream, error) {
+	if err := s.accountRenewalGuard.CheckAccount(ctx, account); err != nil {
+		return nil, geminiCachedContentNotSent(err)
+	}
 	resourceURL, err := s.upstreamResourceURL(account, record)
 	if err != nil {
 		return nil, err

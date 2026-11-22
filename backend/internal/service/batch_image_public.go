@@ -82,16 +82,17 @@ type BatchImageOwner struct {
 }
 
 type BatchImagePublicService struct {
-	Repo              BatchImageRepository
-	AccountRepo       BatchImageAccountSelectionRepository
-	GroupRepo         BatchImageGroupPricingRepository
-	UserGroupRateRepo BatchImageUserGroupRateRepository
-	Queue             BatchImageQueue
-	ProviderRegistry  *BatchImageProviderRegistry
-	Pricing           BatchImagePricingResolver
-	BillingRepo       UsageBillingRepository
-	AuthCache         APIKeyAuthCacheInvalidator
-	Config            *config.Config
+	Repo                BatchImageRepository
+	AccountRepo         BatchImageAccountSelectionRepository
+	GroupRepo           BatchImageGroupPricingRepository
+	UserGroupRateRepo   BatchImageUserGroupRateRepository
+	Queue               BatchImageQueue
+	ProviderRegistry    *BatchImageProviderRegistry
+	Pricing             BatchImagePricingResolver
+	BillingRepo         UsageBillingRepository
+	AuthCache           APIKeyAuthCacheInvalidator
+	Config              *config.Config
+	accountRenewalGuard *AccountRenewalGuard
 }
 
 type BatchImagePricingSnapshot struct {
@@ -633,6 +634,9 @@ func (s *BatchImagePublicService) ListModels(ctx context.Context, owner BatchIma
 		}
 		accounts, err := s.listCandidateAccounts(ctx, owner.GroupID, batchImageProviderPlatform(providerName))
 		if err != nil {
+			if IsAccountRenewalExpired(err) {
+				continue
+			}
 			return nil, err
 		}
 		for i := range accounts {
@@ -935,6 +939,7 @@ func maxBatchImageReferenceImagesForModel(model string) int {
 
 func (s *BatchImagePublicService) selectProviderAndAccount(ctx context.Context, owner BatchImageOwner, requestedProvider, model string) (BatchImageProvider, *Account, error) {
 	providers := batchImageProviderSelectionOrder(requestedProvider)
+	var renewalError error
 	for _, providerName := range providers {
 		provider, ok := s.ProviderRegistry.Get(providerName)
 		if !ok || provider == nil {
@@ -942,6 +947,10 @@ func (s *BatchImagePublicService) selectProviderAndAccount(ctx context.Context, 
 		}
 		accounts, err := s.listCandidateAccounts(ctx, owner.GroupID, batchImageProviderPlatform(providerName))
 		if err != nil {
+			if IsAccountRenewalExpired(err) {
+				renewalError = err
+				continue
+			}
 			return nil, nil, err
 		}
 		// 与普通账号调度一致：priority 数值越小越优先，同优先级按 ID 排序。
@@ -961,6 +970,9 @@ func (s *BatchImagePublicService) selectProviderAndAccount(ctx context.Context, 
 			}
 		}
 	}
+	if renewalError != nil {
+		return nil, nil, renewalError
+	}
 	if requestedProvider != "" {
 		return nil, nil, ErrBatchImageNoAccountAvailable
 	}
@@ -971,10 +983,17 @@ func (s *BatchImagePublicService) listCandidateAccounts(ctx context.Context, gro
 	if s.AccountRepo == nil {
 		return nil, ErrBatchImageNoAccountAvailable
 	}
+	var accounts []Account
+	var err error
 	if groupID != nil && *groupID > 0 {
-		return s.AccountRepo.ListSchedulableByGroupIDAndPlatform(ctx, *groupID, platform)
+		accounts, err = s.AccountRepo.ListSchedulableByGroupIDAndPlatform(ctx, *groupID, platform)
+	} else {
+		accounts, err = s.AccountRepo.ListSchedulableByPlatform(ctx, platform)
 	}
-	return s.AccountRepo.ListSchedulableByPlatform(ctx, platform)
+	if err != nil {
+		return nil, err
+	}
+	return s.accountRenewalGuard.FilterAccounts(ctx, accounts)
 }
 
 func (s *BatchImagePublicService) ensureGroupAllowsBatchImage(ctx context.Context, groupID *int64) error {

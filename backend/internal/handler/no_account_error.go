@@ -39,6 +39,9 @@ var selectionModelRateLimitedPattern = regexp.MustCompile(`(?:model_rate_limited
 // classifySelectionFailureError preserves the scheduler's compact reason when
 // every model-capable account is temporarily rate limited.
 func classifySelectionFailureError(err error, fallback noAccountErrorClassification) noAccountErrorClassification {
+	if service.IsAccountRenewalExpired(err) {
+		return accountRenewalNoAccountClassification()
+	}
 	if err == nil {
 		return fallback
 	}
@@ -111,6 +114,13 @@ func classifyNoAccountError(
 		ErrType: "api_error",
 		Message: "Service temporarily unavailable",
 	}
+	if checker, ok := diag.(interface {
+		CheckAccountRenewalAvailability(context.Context, *int64, string) error
+	}); ok && apiKey != nil {
+		if service.IsAccountRenewalExpired(checker.CheckAccountRenewalAvailability(ctx, apiKey.GroupID, platform)) {
+			return accountRenewalNoAccountClassification()
+		}
+	}
 
 	routingModel = strings.TrimSpace(routingModel)
 	displayModel = strings.TrimSpace(displayModel)
@@ -135,6 +145,10 @@ func classifyNoAccountError(
 		}
 	}
 	return fallback
+}
+
+func accountRenewalNoAccountClassification() noAccountErrorClassification {
+	return noAccountErrorClassification{Status: http.StatusPaymentRequired, ErrType: service.AccountRenewalExpiredCode, Message: service.AccountRenewalExpiredMessage}
 }
 
 // classifyNoAccountErrorFromGin is a thin wrapper that forwards the gin

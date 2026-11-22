@@ -7928,6 +7928,20 @@
                 <Toggle v-model="form.payment_enabled" />
               </div>
               <template v-if="form.payment_enabled">
+                <fieldset class="rounded-xl border border-gray-200 p-4 dark:border-dark-600" data-testid="payment-visible-order-types">
+                  <legend class="px-1 font-medium text-gray-900 dark:text-white">{{ t('payment.visibleOrderTypes') }}</legend>
+                  <div class="flex flex-wrap gap-5">
+                    <label v-for="option in [
+                      { value: 'balance', label: t('payment.tabTopUp') },
+                      { value: 'subscription', label: t('payment.tabSubscribe') },
+                      { value: 'account', label: t('payment.tabAccount') },
+                    ]" :key="option.value" class="flex cursor-pointer items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
+                      <input v-model="form.payment_visible_order_types" type="checkbox" :value="option.value" class="h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500" />
+                      {{ option.label }}
+                    </label>
+                  </div>
+                  <p class="mt-2 text-xs text-gray-500 dark:text-gray-400">{{ t('payment.visibleOrderTypesHint') }}</p>
+                </fieldset>
                 <!-- Row 1: Product name -->
                 <div class="grid grid-cols-1 gap-3 sm:grid-cols-3">
                   <div>
@@ -9793,6 +9807,7 @@ const form = reactive<SettingsForm>({
   payment_daily_limit: 50000,
   payment_max_pending_orders: 3,
   payment_order_timeout_minutes: 30,
+  payment_visible_order_types: ["balance", "subscription"] as string[],
   payment_balance_disabled: false,
   payment_balance_recharge_multiplier: 1,
   payment_subscription_usd_to_cny_rate: 0,
@@ -11678,6 +11693,7 @@ async function saveSettings() {
       payment_max_pending_orders: Number(form.payment_max_pending_orders) || 0,
       payment_order_timeout_minutes:
         Number(form.payment_order_timeout_minutes) || 0,
+      payment_visible_order_types: form.payment_visible_order_types,
       payment_balance_disabled: form.payment_balance_disabled,
       payment_balance_recharge_multiplier:
         Number(form.payment_balance_recharge_multiplier) || 1,

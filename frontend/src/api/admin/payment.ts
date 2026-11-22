@@ -22,6 +22,7 @@ export interface AdminPaymentConfig {
   order_timeout_minutes: number
   max_pending_orders: number
   enabled_payment_types: string[]
+  visible_order_types?: string[]
   balance_disabled: boolean
   balance_recharge_multiplier: number
   subscription_usd_to_cny_rate: number
@@ -42,6 +43,7 @@ export interface UpdatePaymentConfigRequest {
   order_timeout_minutes?: number
   max_pending_orders?: number
   enabled_payment_types?: string[]
+  visible_order_types?: string[]
   balance_disabled?: boolean
   balance_recharge_multiplier?: number
   subscription_usd_to_cny_rate?: number

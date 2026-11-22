@@ -36,7 +36,7 @@
       <div class="flex h-16 w-16 items-center justify-center rounded-full bg-green-100 dark:bg-green-900/30">
         <Icon name="check" size="lg" class="text-green-500" />
       </div>
-      <p class="text-lg font-bold text-gray-900 dark:text-white">{{ t('payment.result.success') }}</p>
+      <p class="text-lg font-bold text-gray-900 dark:text-white">{{ t(paidOrder?.order_type === 'account' ? 'payment.result.accountSuccess' : 'payment.result.success') }}</p>
       <div v-if="paidOrder" class="w-full rounded-xl bg-gray-50 p-4 dark:bg-dark-800">
         <div class="space-y-2 text-sm">
           <div class="flex justify-between">
@@ -112,7 +112,7 @@ const expired = ref(false)
 const cancelling = ref(false)
 const success = ref(false)
 const paidOrder = ref<PaymentOrder | null>(null)
-const creditedAmountSymbol = currencySymbol('USD')
+const creditedAmountSymbol = computed(() => currencySymbol(paidOrder.value?.order_type === 'account' ? 'CNY' : 'USD'))
 
 let pollTimer: ReturnType<typeof setInterval> | null = null
 let countdownTimer: ReturnType<typeof setInterval> | null = null
@@ -126,7 +126,7 @@ const isAlipay = computed(() => isBuiltInAlipayMethod(props.paymentType))
 const isWxpay = computed(() => isBuiltInWxpayMethod(props.paymentType))
 
 const dialogTitle = computed(() => {
-  if (success.value) return t('payment.result.success')
+  if (success.value) return t(paidOrder.value?.order_type === 'account' ? 'payment.result.accountSuccess' : 'payment.result.success')
   if (!qrUrl.value) return t('payment.qr.payInNewWindow')
   if (isAlipay.value) return t('payment.qr.scanAlipay')
   if (isWxpay.value) return t('payment.qr.scanWxpay')

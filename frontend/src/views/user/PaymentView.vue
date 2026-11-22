@@ -116,6 +116,52 @@
             </button>
             </template>
           </template>
+          <template v-else-if="activeTab === 'account'">
+            <div class="card p-6" data-testid="account-payment-summary">
+              <div class="flex items-start justify-between gap-4">
+                <div class="min-w-0">
+                  <p class="text-sm text-gray-500 dark:text-gray-400">{{ t('payment.paymentAmount') }}</p>
+                  <p class="mt-2 text-3xl font-bold tabular-nums text-gray-900 dark:text-white" data-testid="account-payment-amount">
+                    {{ accountQuoteLoading ? '—' : accountQuote ? formatPaymentAmount(accountAmount, 'CNY', localeCode) : '—' }}
+                  </p>
+                  <p class="mt-2 text-sm text-gray-500 dark:text-gray-400" data-testid="account-payment-expiry">
+                    {{ t('payment.account.expiryDate') }}: {{ accountQuoteLoading ? '—' : accountExpiryDate || t(accountExpiryUnavailable ? 'payment.account.dateUnavailable' : 'payment.account.dateNotSet') }}
+                  </p>
+                </div>
+                <button data-testid="account-payment-refresh" class="btn btn-secondary shrink-0 text-sm" :disabled="accountQuoteLoading || submitting" @click="loadAccountQuote">{{ t('common.refresh') }}</button>
+              </div>
+              <p v-if="accountQuoteLoading" class="mt-3 text-sm text-gray-500">{{ t('common.loading') }}</p>
+              <p v-else-if="accountQuoteError" role="alert" class="mt-3 text-sm text-red-600 dark:text-red-400">{{ accountQuoteError }}</p>
+              <p v-if="accountDatesMissing" role="alert" class="mt-3 text-sm text-amber-700 dark:text-amber-300">{{ t('payment.account.missingDate') }}</p>
+            </div>
+            <div v-if="enabledMethods.length" class="card p-6" data-testid="account-payment-methods">
+              <PaymentMethodSelector :methods="accountMethodOptions" :selected="selectedMethod" @select="selectedMethod = $event" />
+              <p v-if="accountAmount > 0 && enabledMethods.length && !accountMethodOptions.some(method => method.available)" class="mt-3 text-sm text-amber-700 dark:text-amber-300">{{ t('payment.amountNoMethod') }}</p>
+            </div>
+            <div class="card p-6" data-testid="account-payment-confirmation">
+              <div class="space-y-2 text-sm">
+                <div class="flex justify-between">
+                  <span class="text-gray-500 dark:text-gray-400">{{ t('payment.paymentAmount') }}</span>
+                  <span class="text-gray-900 dark:text-white">{{ formatPaymentAmount(accountAmount, 'CNY', localeCode) }}</span>
+                </div>
+                <div v-if="feeRate > 0" class="flex justify-between">
+                  <span class="text-gray-500 dark:text-gray-400">{{ t('payment.fee') }} ({{ feeRate }}%)</span>
+                  <span class="text-gray-900 dark:text-white">{{ formatPaymentAmount(accountFee, 'CNY', localeCode) }}</span>
+                </div>
+                <div class="flex justify-between border-t border-gray-200 pt-2 dark:border-dark-600">
+                  <span class="font-medium text-gray-700 dark:text-gray-300">{{ t('payment.actualPay') }}</span>
+                  <span class="text-lg font-bold text-primary-600 dark:text-primary-400">{{ formatPaymentAmount(accountPayAmount, 'CNY', localeCode) }}</span>
+                </div>
+              </div>
+            </div>
+            <button data-testid="account-payment-submit" :class="['btn w-full py-3 text-base font-medium', paymentButtonClass]" :disabled="!canSubmitAccount || submitting" @click="handleSubmitAccount">
+              <span v-if="submitting" class="flex items-center justify-center gap-2">
+                <span class="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent"></span>
+                {{ t('common.processing') }}
+              </span>
+              <span v-else>{{ t('payment.createOrder') }} {{ formatPaymentAmount(accountPayAmount, 'CNY', localeCode) }}</span>
+            </button>
+          </template>
           <!-- Subscribe Tab -->
           <template v-else-if="activeTab === 'subscription'">
             <!-- Subscription confirm (inline, replaces plan list) -->
@@ -291,10 +337,11 @@ import { useSubscriptionStore } from '@/stores/subscriptions'
 import { useAppStore } from '@/stores'
 import { FeatureFlags, resolveFeatureFlag } from '@/utils/featureFlags'
 import { paymentAPI } from '@/api/payment'
+import { getUserBillingSummary, type UserBillingSummary } from '@/api/accountBilling'
 import { extractApiErrorMessage, extractI18nErrorMessage } from '@/utils/apiError'
 import { isMobileDevice } from '@/utils/device'
 import { hasPeakRate, formatPeakRateWindow, serverTimezoneLabel, type PeakRateFields } from '@/utils/peak-rate'
-import type { SubscriptionPlan, CheckoutInfoResponse, CreateOrderResult, OrderType } from '@/types/payment'
+import type { SubscriptionPlan, CheckoutInfoResponse, CreateOrderResult, OrderType, AccountPaymentQuote } from '@/types/payment'
 import { formatBalanceRechargeMultiplier, formatRechargeBonusNumber, normalizeRechargeBonusMode, normalizeRechargeBonusTiers, quoteRechargeBonus } from '@/utils/rechargeBonus'
 import AppLayout from '@/components/layout/AppLayout.vue'
 import AmountInput from '@/components/payment/AmountInput.vue'
@@ -350,7 +397,14 @@ const loading = ref(true)
 const submitting = ref(false)
 const errorMessage = ref('')
 const errorHintMessage = ref('')
-const activeTab = ref<'recharge' | 'subscription'>('recharge')
+type PaymentTab = 'recharge' | 'subscription' | 'account'
+const activeTab = ref<PaymentTab>('recharge')
+const accountQuote = ref<AccountPaymentQuote | null>(null)
+const accountSummaryAccounts = ref<UserBillingSummary['accounts']>([])
+const accountExpiryUnavailable = ref(false)
+const accountQuoteLoading = ref(false)
+const accountQuoteError = ref('')
+let accountQuoteGeneration = 0
 const amount = ref<number | null>(null)
 const selectedMethod = ref('')
 const selectedPlan = ref<SubscriptionPlan | null>(null)
@@ -364,6 +418,7 @@ interface CreateOrderOptions {
   paymentType?: string
   isResume?: boolean
   mobileQrFallbackAttempted?: boolean
+  accountQuoteToken?: string
 }
 
 interface WeixinJSBridgeLike {
@@ -511,6 +566,7 @@ function onPaymentDone() {
   if (wasSubscription) {
     subscriptionStore.fetchActiveSubscriptions(true).catch(() => {})
   }
+  if (activeTab.value === 'account') void loadAccountQuote()
 }
 
 async function onPaymentSuccess() {
@@ -519,6 +575,10 @@ async function onPaymentSuccess() {
   authStore.refreshUser()
   if (paymentState.value.orderType === 'subscription') {
     subscriptionStore.fetchActiveSubscriptions(true).catch(() => {})
+  }
+  if (completedPayment.orderType === 'account') {
+    window.dispatchEvent(new Event('account-billing-paid'))
+    void loadAccountQuote()
   }
   await redirectToPaymentResult(completedPayment)
 }
@@ -550,9 +610,11 @@ const renderedBonusNotice = computed(() => {
 const subscriptionEnabled = computed(() => resolveFeatureFlag(appStore.cachedPublicSettings, FeatureFlags.subscription))
 
 const tabs = computed(() => {
-  const result: { key: 'recharge' | 'subscription'; label: string }[] = []
-  if (!checkout.value.balance_disabled) result.push({ key: 'recharge', label: t('payment.tabTopUp') })
-  if (subscriptionEnabled.value) result.push({ key: 'subscription', label: t('payment.tabSubscribe') })
+  const visible = checkout.value.visible_order_types ?? ['balance', 'subscription']
+  const result: { key: PaymentTab; label: string }[] = []
+  if (visible.includes('balance') && !checkout.value.balance_disabled) result.push({ key: 'recharge', label: t('payment.tabTopUp') })
+  if (visible.includes('subscription') && subscriptionEnabled.value) result.push({ key: 'subscription', label: t('payment.tabSubscribe') })
+  if (visible.includes('account')) result.push({ key: 'account', label: t('payment.tabAccount') })
   return result
 })
 
@@ -565,8 +627,18 @@ watch(tabs, (available) => {
   if (leavingSubscription) selectedPlan.value = null
 })
 
-const visibleMethods = computed(() => getVisibleMethods(checkout.value.methods))
+const visibleMethods = computed(() => {
+  const methods = getVisibleMethods(checkout.value.methods)
+  if (activeTab.value !== 'account') return methods
+  return Object.fromEntries(Object.entries(methods).filter(([, limit]) => normalizePaymentCurrency(limit.currency) === 'CNY'))
+})
 const enabledMethods = computed(() => Object.keys(visibleMethods.value))
+watch(enabledMethods, (methods) => {
+  if (!methods.includes(selectedMethod.value)) selectedMethod.value = methods[0] ?? ''
+})
+watch(activeTab, (tab) => {
+  if (tab === 'account') void loadAccountQuote()
+})
 const validAmount = computed(() => amount.value ?? 0)
 const balanceRechargeMultiplier = computed(() => {
   const multiplier = checkout.value.balance_recharge_multiplier
@@ -822,6 +894,76 @@ function closeRenewalModal() {
   renewGroupId.value = null
 }
 
+async function loadAccountQuote() {
+  const generation = ++accountQuoteGeneration
+  accountQuoteLoading.value = true
+  accountQuoteError.value = ''
+  accountQuote.value = null
+  accountSummaryAccounts.value = []
+  accountExpiryUnavailable.value = false
+  const [quoteResult, summaryResult] = await Promise.allSettled([
+    paymentAPI.getAccountQuote(),
+    user.value?.role === 'user' ? getUserBillingSummary() : Promise.resolve(null),
+  ])
+  if (generation !== accountQuoteGeneration) return
+  if (quoteResult.status === 'fulfilled') {
+    accountQuote.value = quoteResult.value.data
+  } else {
+    accountQuoteError.value = extractApiErrorMessage(quoteResult.reason, t('common.error'))
+  }
+  if (summaryResult.status === 'fulfilled') {
+    accountSummaryAccounts.value = summaryResult.value?.accounts ?? []
+  } else {
+    accountExpiryUnavailable.value = true
+  }
+  accountQuoteLoading.value = false
+}
+
+const accountExpiryDate = computed(() => {
+  const accounts = new Map<number, { valid_through?: string | null; renewal_date: string | null }>(accountSummaryAccounts.value.map(account => [account.account_id, account]))
+  for (const account of accountQuote.value?.accounts ?? []) accounts.set(account.account_id, account)
+  return [...accounts.values()]
+    .map(account => (account.valid_through === undefined ? account.renewal_date : account.valid_through)?.slice(0, 10) ?? '')
+    .filter(date => /^\d{4}-\d{2}-\d{2}$/.test(date))
+    .sort()[0] ?? ''
+})
+
+const accountAmount = computed(() => accountQuote.value?.amount_due ?? 0)
+const accountFee = computed(() => {
+  if (feeRate.value <= 0 || accountAmount.value <= 0) return 0
+  // Calculate in integer cents so decimal rates cannot add a cent through floating point error.
+  const [mantissa, exponent = '0'] = String(feeRate.value).toLowerCase().split('e')
+  const decimalPlaces = (mantissa.split('.')[1]?.length ?? 0) - Number(exponent)
+  const rate = BigInt(mantissa.replace('.', ''))
+  const numerator = BigInt(Math.round(accountAmount.value * 100)) * rate * 10n ** BigInt(Math.max(0, -decimalPlaces))
+  const denominator = 100n * 10n ** BigInt(Math.max(0, decimalPlaces))
+  return Number((numerator + denominator - 1n) / denominator) / 100
+})
+const accountPayAmount = computed(() => Math.round((accountAmount.value + accountFee.value) * 100) / 100)
+const accountDatesMissing = computed(() => accountQuote.value?.accounts.some(account => !account.renewal_date) ?? false)
+const accountMethodOptions = computed(() => enabledMethods.value.map(type => ({
+  type,
+  display_name: visibleMethods.value[type]?.display_name,
+  fee_rate: visibleMethods.value[type]?.fee_rate ?? 0,
+  available: visibleMethods.value[type]?.available !== false && amountFitsMethod(accountPayAmount.value, type),
+})))
+const canSubmitAccount = computed(() => !!accountQuote.value?.quote_token
+  && accountAmount.value > 0 && !accountDatesMissing.value && !accountQuoteLoading.value
+  && selectedCurrency.value === 'CNY' && !!selectedLimit.value
+  && selectedLimit.value.available !== false && amountFitsMethod(accountPayAmount.value, selectedMethod.value))
+
+async function handleSubmitAccount() {
+  if (!canSubmitAccount.value || submitting.value) return
+  const previous = accountQuote.value
+  await loadAccountQuote()
+  if (!previous || previous.quote_token !== accountQuote.value?.quote_token) {
+    appStore.showWarning(t('payment.account.quoteChanged'))
+    return
+  }
+  if (!canSubmitAccount.value) return
+  await createOrder(accountAmount.value, 'account', undefined, { accountQuoteToken: accountQuote.value?.quote_token })
+}
+
 async function handleSubmitRecharge() {
   if (!canSubmit.value || submitting.value) return
   await createOrder(validAmount.value, 'balance')
@@ -843,6 +985,7 @@ async function createOrder(orderAmount: number, orderType: OrderType, planId?: n
       paymentType: requestType,
       orderType,
       planId,
+      accountQuoteToken: orderType === 'account' ? options.accountQuoteToken ?? accountQuote.value?.quote_token : undefined,
       origin: typeof window !== 'undefined' ? window.location.origin : '',
       isMobile: isMobileDevice(),
       isWechatBrowser: typeof window !== 'undefined' && /MicroMessenger/i.test(window.navigator.userAgent),
@@ -857,6 +1000,9 @@ async function createOrder(orderAmount: number, orderType: OrderType, planId?: n
     }
 
     const result = await paymentStore.createOrder(payload) as CreateOrderResult & { resume_token?: string }
+    if (result.order_type === 'balance' || result.order_type === 'subscription' || result.order_type === 'account') {
+      orderType = result.order_type
+    }
     const openWindow = (url: string) => {
       const win = window.open(url, 'paymentPopup', getPaymentPopupFeatures())
       if (!win || win.closed) {
@@ -912,6 +1058,11 @@ async function createOrder(orderAmount: number, orderType: OrderType, planId?: n
     }
 
     if (decision.kind === 'unhandled') {
+      if (orderType === 'account' && decision.paymentState.orderId > 0) {
+        paymentState.value = decision.paymentState
+        paymentPhase.value = 'paying'
+        persistRecoverySnapshot(decision.recovery)
+      }
       applyScenarioError({ reason: 'UNHANDLED_PAYMENT_SCENARIO' }, visibleMethod)
       return
     }
@@ -936,6 +1087,10 @@ async function createOrder(orderAmount: number, orderType: OrderType, planId?: n
       try {
         const jsapiResult = await invokeWechatJsapiPayment(decision.jsapi as Record<string, unknown>)
         const errMsg = String(jsapiResult.err_msg || '').toLowerCase()
+        if (orderType === 'account' && errMsg && !errMsg.includes('ok')) {
+          appStore.showWarning(t('payment.account.launchPending'))
+          return
+        }
         if (errMsg.includes('cancel')) {
           appStore.showInfo(t('payment.qr.cancelled'))
           resetPayment()
@@ -960,6 +1115,10 @@ async function createOrder(orderAmount: number, orderType: OrderType, planId?: n
           await redirectToPaymentResult(resultState)
         }
       } catch (err: unknown) {
+        if (orderType === 'account') {
+          appStore.showWarning(t('payment.account.launchPending'))
+          return
+        }
         resetPayment()
         const fallbackApplied = await attemptMobileQrFallback(err, {
           orderAmount,
@@ -1021,6 +1180,7 @@ interface MobileQrFallbackContext {
   orderAmount: number
   orderType: OrderType
   planId?: number
+  accountQuoteToken?: string
   paymentType: string
   attempted: boolean
 }
@@ -1070,6 +1230,7 @@ async function attemptMobileQrFallback(err: unknown, context: MobileQrFallbackCo
       paymentType: visibleMethod,
       orderType: context.orderType,
       planId: context.planId,
+      accountQuoteToken: context.accountQuoteToken ?? (context.orderType === 'account' ? accountQuote.value?.quote_token : undefined),
       origin: typeof window !== 'undefined' ? window.location.origin : '',
       isMobile: false,
       isWechatBrowser: false,
@@ -1135,6 +1296,10 @@ async function resumeWechatPaymentFromQuery() {
   }
 
   selectedMethod.value = resume.paymentType
+  if (resume.orderType === 'account') {
+    activeTab.value = 'account'
+    if (!resume.wechatResumeToken) await loadAccountQuote()
+  }
   if (resume.orderType === 'balance' && resume.orderAmount > 0) {
     amount.value = resume.orderAmount
   }
@@ -1154,7 +1319,7 @@ async function resumeWechatPaymentFromQuery() {
   }
 
   if (resume.orderAmount > 0 && resume.openid) {
-    await createOrder(resume.orderAmount, resume.orderType, resume.planId, {
+    await createOrder(resume.orderType === 'account' ? accountQuote.value?.amount_due ?? 0 : resume.orderAmount, resume.orderType, resume.planId, {
       openid: resume.openid,
       paymentType: resume.paymentType,
       isResume: true,
@@ -1203,7 +1368,10 @@ onMounted(async () => {
     await resumeWechatPaymentFromQuery()
     // balance_disabled → the tabs watcher above moves activeTab to the subscription tab (when enabled).
     // Handle renewal navigation: ?tab=subscription&group=123 (ignored when subscriptions are disabled)
-    if (route.query.tab === 'subscription' && subscriptionEnabled.value) {
+    if (route.query.tab === 'account' && tabs.value.some(tab => tab.key === 'account')) {
+      activeTab.value = 'account'
+    }
+    if (route.query.tab === 'subscription' && tabs.value.some(tab => tab.key === 'subscription')) {
       activeTab.value = 'subscription'
       if (route.query.group) {
         const groupId = Number(route.query.group)

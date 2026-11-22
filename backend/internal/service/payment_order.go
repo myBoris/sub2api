@@ -50,6 +50,11 @@ func (s *PaymentService) CreateOrder(ctx context.Context, req CreateOrderRequest
 	if user.Status != payment.EntityStatusActive {
 		return nil, infraerrors.Forbidden("USER_INACTIVE", "user account is disabled")
 	}
+	if req.OrderType == accountPaymentOrderType {
+		if err := s.validateAccountPaymentQuote(ctx, req); err != nil {
+			return nil, err
+		}
+	}
 	if s.notificationEmailService != nil {
 		s.notificationEmailService.RememberRecipientLocale(ctx, req.UserID, user.Email, req.Locale)
 	}
@@ -62,6 +67,9 @@ func (s *PaymentService) CreateOrder(ctx context.Context, req CreateOrderRequest
 		}
 	}
 	orderAmount := req.Amount
+	if err := validateAccountPaymentCurrency(req.OrderType, methodCurrency); err != nil {
+		return nil, err
+	}
 	limitAmount := req.Amount
 	bonusAmount := 0.0
 	if plan != nil {
@@ -95,6 +103,9 @@ func (s *PaymentService) CreateOrder(ctx context.Context, req CreateOrderRequest
 			return nil, err
 		}
 	}
+	if err := validateAccountPaymentCurrency(req.OrderType, selectedCurrency); err != nil {
+		return nil, err
+	}
 	if err := validateSelectedCreateOrderAmountCurrency(payAmountStr, sel); err != nil {
 		return nil, err
 	}
@@ -109,6 +120,12 @@ func (s *PaymentService) CreateOrder(ctx context.Context, req CreateOrderRequest
 	if err != nil {
 		return nil, err
 	}
+	if req.OrderType == accountPaymentOrderType {
+		if err := s.accountBilling.BindPaymentOrder(ctx, order.ID, req.UserID, req.AccountQuoteToken, req.Amount); err != nil {
+			_, _ = s.entClient.PaymentOrder.UpdateOneID(order.ID).SetStatus(OrderStatusCancelled).Save(ctx)
+			return nil, accountPaymentError(err)
+		}
+	}
 	resp, err := s.invokeProvider(ctx, order, req, cfg, limitAmount, payAmountStr, payAmount, plan, sel)
 	if err != nil {
 		_, _ = s.entClient.PaymentOrder.UpdateOneID(order.ID).
@@ -120,6 +137,9 @@ func (s *PaymentService) CreateOrder(ctx context.Context, req CreateOrderRequest
 }
 
 func (s *PaymentService) validateOrderInput(ctx context.Context, req CreateOrderRequest, cfg *PaymentConfig) (*dbent.SubscriptionPlan, error) {
+	if isSupportedPaymentOrderType(req.OrderType) && !cfg.IsOrderTypeVisible(req.OrderType) {
+		return nil, infraerrors.Forbidden("PAYMENT_ENTRY_DISABLED", "this payment entry is not available")
+	}
 	// 订单类型必须走白名单：未知类型会跳过充值开关与倍率计算，履约时却仍按余额到账。
 	switch req.OrderType {
 	case payment.OrderTypeBalance:
@@ -128,6 +148,14 @@ func (s *PaymentService) validateOrderInput(ctx context.Context, req CreateOrder
 		}
 	case payment.OrderTypeSubscription:
 		return s.validateSubOrder(ctx, req)
+	case accountPaymentOrderType:
+		if req.PlanID != 0 || strings.TrimSpace(req.AccountQuoteToken) == "" {
+			return nil, infraerrors.BadRequest("ACCOUNT_QUOTE_REQUIRED", "请刷新账号账单后支付")
+		}
+		if !isValidProviderAmount(req.Amount) {
+			return nil, infraerrors.BadRequest("INVALID_AMOUNT", "amount must be a positive number")
+		}
+		return nil, nil
 	default:
 		return nil, infraerrors.BadRequest("INVALID_ORDER_TYPE", "unsupported order type")
 	}
@@ -425,6 +453,9 @@ func (s *PaymentService) invokeProvider(ctx context.Context, order *dbent.Paymen
 			WithMetadata(map[string]string{"provider": sel.ProviderKey, "instance_id": sel.InstanceID})
 	}
 	subject := s.buildPaymentSubject(plan, limitAmount, cfg, sel)
+	if req.OrderType == accountPaymentOrderType {
+		subject = fmt.Sprintf("%s账号续费 ¥%.2f%s", cfg.ProductNamePrefix, limitAmount, cfg.ProductNameSuffix)
+	}
 	outTradeNo := order.OutTradeNo
 	canonicalReturnURL, err := CanonicalizeReturnURL(req.ReturnURL, req.SrcHost, req.SrcURL)
 	if err != nil {
@@ -610,6 +641,7 @@ func (s *PaymentService) buildWeChatOAuthRequiredResponse(ctx context.Context, r
 
 	return &CreateOrderResponse{
 		Amount:      amount,
+		OrderType:   req.OrderType,
 		PayAmount:   payAmount,
 		FeeRate:     feeRate,
 		ResultType:  payment.CreatePaymentResultOAuthRequired,
@@ -743,6 +775,7 @@ func classifyCreatePaymentError(req CreateOrderRequest, providerKey string, err 
 
 func buildCreateOrderResponse(order *dbent.PaymentOrder, req CreateOrderRequest, payAmount float64, sel *payment.InstanceSelection, pr *payment.CreatePaymentResponse, resultType payment.CreatePaymentResultType) *CreateOrderResponse {
 	return &CreateOrderResponse{
+		OrderType:    order.OrderType,
 		OrderID:      order.ID,
 		Amount:       order.Amount,
 		PayAmount:    payAmount,
@@ -782,6 +815,9 @@ func buildWeChatPaymentOAuthStartURL(req CreateOrderRequest, scope string) (stri
 	}
 	if req.PlanID > 0 {
 		q.Set("plan_id", strconv.FormatInt(req.PlanID, 10))
+	}
+	if req.OrderType == accountPaymentOrderType {
+		q.Set("account_quote_token", req.AccountQuoteToken)
 	}
 	if scope = strings.TrimSpace(scope); scope != "" {
 		q.Set("scope", scope)

@@ -1623,6 +1623,9 @@ func resolveOpenAIMessagesMetadataSession(c *gin.Context, sessionHash, promptCac
 
 // anthropicErrorResponse writes an error in Anthropic Messages API format.
 func (h *OpenAIGatewayHandler) anthropicErrorResponse(c *gin.Context, status int, errType, message string) {
+	if errType == service.AccountRenewalExpiredCode && writeAccountRenewalError(c, service.ErrAccountRenewalExpired) {
+		return
+	}
 	c.JSON(status, gin.H{
 		"type": "error",
 		"error": gin.H{
@@ -1635,6 +1638,18 @@ func (h *OpenAIGatewayHandler) anthropicErrorResponse(c *gin.Context, status int
 // anthropicStreamingAwareError handles errors that may occur during streaming,
 // using Anthropic SSE error format.
 func (h *OpenAIGatewayHandler) anthropicStreamingAwareError(c *gin.Context, status int, errType, message string, streamStarted bool) {
+	if errType == service.AccountRenewalExpiredCode {
+		if !streamStarted {
+			writeAccountRenewalError(c, service.ErrAccountRenewalExpired)
+			return
+		}
+		payload, _ := json.Marshal(gin.H{"type": "error", "error": gin.H{"type": "billing_error", "code": errType, "message": message}})
+		_, _ = fmt.Fprintf(c.Writer, "event: error\ndata: %s\n\n", payload)
+		if flusher, ok := c.Writer.(http.Flusher); ok {
+			flusher.Flush()
+		}
+		return
+	}
 	if streamStarted {
 		flusher, ok := c.Writer.(http.Flusher)
 		if ok {
@@ -2521,6 +2536,10 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 		return
 	}
 	reqLog.Info("openai.websocket_ingress_started")
+	if err := h.gatewayService.CheckAccountRenewalAvailability(c.Request.Context(), apiKey.GroupID, openAICompatibleRequestPlatform(c.Request.Context(), apiKey)); service.IsAccountRenewalExpired(err) {
+		h.errorResponse(c, http.StatusPaymentRequired, service.AccountRenewalExpiredCode, service.AccountRenewalExpiredMessage)
+		return
+	}
 	clientIP := ip.GetClientIP(c)
 	userAgent := strings.TrimSpace(c.GetHeader("User-Agent"))
 	clientLifecycleCtx := c.Request.Context()
@@ -3071,6 +3090,9 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 			ReasoningEffortMappings:     reasoningEffortMappings,
 			TurnStarted:                 recordTurnStart,
 			BeforeRequest: func(turn int, payload []byte, originalModel string) error {
+				if err := h.gatewayService.CheckAccountRenewal(ctx, account); err != nil {
+					return service.NewOpenAIWSClientCloseError(coderws.StatusPolicyViolation, service.AccountRenewalExpiredWSReason, err)
+				}
 				c.Set(securityAuditWSTurnContextKey, turn)
 				service.BeginOpsStreamTurn(c, turn)
 				setCyberTurnBody(turn, payload)
@@ -3144,6 +3166,9 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 				return mapping.MappedModel, nil
 			},
 			BeforeTurn: func(turn int) error {
+				if err := h.gatewayService.CheckAccountRenewal(ctx, account); err != nil {
+					return service.NewOpenAIWSClientCloseError(coderws.StatusPolicyViolation, service.AccountRenewalExpiredWSReason, err)
+				}
 				// turn==1 的会话屏蔽已由握手层检查覆盖；连接内 flag 只拦截后续 turn。
 				if cyberBlockedThisConn && !h.cyberPolicyLogOnly(c, apiKey) {
 					return service.NewOpenAIWSClientCloseError(coderws.StatusPolicyViolation, cyberSessionBlockedClientMsg, nil)
@@ -3854,6 +3879,10 @@ func (h *OpenAIGatewayHandler) handleForwardRequestBodyMemoryOverload(c *gin.Con
 
 // handleStreamingAwareError handles errors that may occur after streaming has started
 func (h *OpenAIGatewayHandler) handleStreamingAwareError(c *gin.Context, status int, errType, message string, streamStarted bool) {
+	if errType == service.AccountRenewalExpiredCode {
+		h.handleStreamingAwareErrorWithCode(c, status, "billing_error", errType, message, streamStarted, false)
+		return
+	}
 	h.handleStreamingAwareErrorWithCode(c, status, errType, "", message, streamStarted, false)
 }
 
@@ -4049,6 +4078,9 @@ func openAIFirstOutputFailoverExhausted(failoverErr *service.UpstreamFailoverErr
 
 // errorResponse returns OpenAI API format error response
 func (h *OpenAIGatewayHandler) errorResponse(c *gin.Context, status int, errType, message string) {
+	if errType == service.AccountRenewalExpiredCode && writeAccountRenewalError(c, service.ErrAccountRenewalExpired) {
+		return
+	}
 	// body-signal compact 心跳可能已把响应头提交为 200：JSON 错误体会与已
 	// 提交的 SSE 流交错，必须降级为 response.failed 终止事件（#3887）。
 	if service.StopOpenAICompactSSEKeepaliveCommitted(c) {

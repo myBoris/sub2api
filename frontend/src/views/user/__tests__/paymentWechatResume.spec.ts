@@ -55,3 +55,12 @@ describe('stripWechatResumeQuery', () => {
     })
   })
 })
+
+
+it('keeps account payment type when returning with a signed WeChat resume token', () => {
+  expect(parseWechatResumeRoute({
+    wechat_resume_token: 'account-resume', order_type: 'account', payment_type: 'wxpay',
+  }, [], 0)).toMatchObject({
+    wechatResumeToken: 'account-resume', orderType: 'account', orderAmount: 0,
+  })
+})

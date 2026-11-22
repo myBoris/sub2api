@@ -6,6 +6,7 @@
 import { apiClient } from './client'
 import type {
   PaymentConfig,
+  AccountPaymentQuote,
   SubscriptionPlan,
   MethodLimitsResponse,
   CheckoutInfoResponse,
@@ -42,6 +43,10 @@ export const paymentAPI = {
   /** Get payment method limits and fee rates */
   getLimits() {
     return apiClient.get<MethodLimitsResponse>('/payment/limits')
+  },
+
+  getAccountQuote() {
+    return apiClient.get<AccountPaymentQuote>('/payment/account-quote')
   },
 
   /** Create a new payment order */

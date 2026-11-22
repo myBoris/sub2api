@@ -2010,6 +2010,10 @@ func (h *GatewayHandler) mapUpstreamError(statusCode int) (int, string, string) 
 
 // handleStreamingAwareError handles errors that may occur after streaming has started
 func (h *GatewayHandler) handleStreamingAwareError(c *gin.Context, status int, errType, message string, streamStarted bool) {
+	if errType == service.AccountRenewalExpiredCode {
+		h.handleStreamingAwareErrorWithCode(c, status, "billing_error", errType, message, streamStarted)
+		return
+	}
 	h.handleStreamingAwareErrorWithCode(c, status, errType, "", message, streamStarted)
 }
 
@@ -2147,6 +2151,9 @@ func (h *GatewayHandler) errorResponse(c *gin.Context, status int, errType, mess
 }
 
 func (h *GatewayHandler) errorResponseWithCode(c *gin.Context, status int, errType, code, message string) {
+	if errType == service.AccountRenewalExpiredCode && writeAccountRenewalError(c, service.ErrAccountRenewalExpired) {
+		return
+	}
 	errorObject := gin.H{"type": errType, "message": message}
 	if code != "" {
 		errorObject["code"] = code

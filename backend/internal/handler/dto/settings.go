@@ -275,6 +275,7 @@ type SystemSettings struct {
 	PaymentOrderTimeoutMin           int      `json:"payment_order_timeout_minutes"`
 	PaymentMaxPendingOrders          int      `json:"payment_max_pending_orders"`
 	PaymentEnabledTypes              []string `json:"payment_enabled_types"`
+	PaymentVisibleOrderTypes         []string `json:"payment_visible_order_types"`
 	PaymentBalanceDisabled           bool     `json:"payment_balance_disabled"`
 	PaymentBalanceRechargeMultiplier float64  `json:"payment_balance_recharge_multiplier"`
 	PaymentSubscriptionUSDToCNYRate  float64  `json:"payment_subscription_usd_to_cny_rate"`

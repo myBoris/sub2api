@@ -491,3 +491,18 @@ describe('readPaymentRecoverySnapshot', () => {
     expect(restored?.paymentEnv).toBe('')
   })
 })
+
+
+describe('account payment flow', () => {
+  it('passes the account quote token and preserves account type across recovery', () => {
+    const payload = buildCreateOrderPayload({
+      amount: 120, paymentType: 'wxpay', orderType: 'account', accountQuoteToken: 'quote-current',
+      isMobile: false, isWechatBrowser: false,
+    })
+    expect(payload).toMatchObject({ order_type: 'account', amount: 120, account_quote_token: 'quote-current' })
+    const launch = decidePaymentLaunch(createOrderResult({ qr_code: 'qr', currency: 'CNY' }), {
+      visibleMethod: 'wxpay', orderType: 'account', isMobile: false,
+    })
+    expect(readPaymentRecoverySnapshot(JSON.stringify(launch.recovery))?.orderType).toBe('account')
+  })
+})

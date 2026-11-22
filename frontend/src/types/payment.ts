@@ -21,7 +21,7 @@ export type OrderStatus =
 
 export type PaymentType = 'alipay' | 'wxpay' | 'alipay_direct' | 'wxpay_direct' | 'stripe' | 'easypay' | 'airwallex'
 
-export type OrderType = 'balance' | 'subscription'
+export type OrderType = 'balance' | 'subscription' | 'account'
 
 // ==================== Configuration ====================
 
@@ -38,6 +38,7 @@ export interface PaymentConfig {
   daily_limit: number
   max_pending_orders: number
   order_timeout_minutes: number
+  visible_order_types?: OrderType[]
   balance_disabled: boolean
   balance_recharge_multiplier: number
   subscription_usd_to_cny_rate: number
@@ -72,6 +73,7 @@ export interface CheckoutInfoResponse {
   global_min: number
   global_max: number
   plans: SubscriptionPlan[]
+  visible_order_types?: OrderType[]
   balance_disabled: boolean
   balance_recharge_multiplier: number
   /** Subscription CNY conversion rate (1 USD = X CNY); 0 = disabled, plan price is charged as-is */
@@ -90,6 +92,20 @@ export interface CheckoutInfoResponse {
   alipay_force_qrcode?: boolean
   /** When true, official Alipay mobile orders use precreate plus an Alipay app deep link */
   alipay_mobile_precreate_deep_link?: boolean
+}
+
+export interface AccountPaymentQuote {
+  month: string
+  amount_due: number
+  quote_token: string
+  accounts: Array<{
+    account_id: number
+    account_name: string
+    price: number
+    renewal_date: string | null
+    valid_through?: string | null
+    expired?: boolean
+  }>
 }
 
 // ==================== Orders ====================
@@ -189,6 +205,7 @@ export interface CreateOrderRequest {
   payment_source?: string
   openid?: string
   wechat_resume_token?: string
+  account_quote_token?: string
   is_mobile?: boolean
 }
 
@@ -214,6 +231,7 @@ export interface WechatJSAPIPayload {
 
 export interface CreateOrderResult {
   order_id: number
+  order_type?: OrderType
   amount: number
   pay_url?: string
   qr_code?: string

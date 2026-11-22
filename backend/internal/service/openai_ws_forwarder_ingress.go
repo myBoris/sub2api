@@ -84,6 +84,17 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 	if account == nil {
 		return errors.New("account is nil")
 	}
+	renewalCtx, renewalCancel, renewalErr := s.WithAccountRenewalContext(ctx, account)
+	if renewalErr != nil {
+		return NewOpenAIWSClientCloseError(coderws.StatusPolicyViolation, AccountRenewalExpiredWSReason, renewalErr)
+	}
+	ctx = renewalCtx
+	defer renewalCancel()
+	defer func() {
+		if IsAccountRenewalExpired(context.Cause(renewalCtx)) {
+			returnErr = NewOpenAIWSClientCloseError(coderws.StatusPolicyViolation, AccountRenewalExpiredWSReason, context.Cause(renewalCtx))
+		}
+	}()
 	// A handler may reuse the same gin context across account failover attempts.
 	// Never let an OAuth attempt's response aliases leak into the next account.
 	setCodexToolNameReverse(c, nil)

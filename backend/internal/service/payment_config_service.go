@@ -57,6 +57,7 @@ type PaymentConfig struct {
 	OrderTimeoutMin           int      `json:"order_timeout_minutes"`
 	MaxPendingOrders          int      `json:"max_pending_orders"`
 	EnabledTypes              []string `json:"enabled_payment_types"`
+	VisibleOrderTypes         []string `json:"visible_order_types"`
 	BalanceDisabled           bool     `json:"balance_disabled"`
 	BalanceRechargeMultiplier float64  `json:"balance_recharge_multiplier"`
 	// SubscriptionUSDToCNYRate 为 0 时订阅换算关闭（兼容存量行为）。
@@ -90,17 +91,18 @@ type PaymentConfig struct {
 
 // UpdatePaymentConfigRequest contains fields to update payment configuration.
 type UpdatePaymentConfigRequest struct {
-	Enabled                   *bool    `json:"enabled"`
-	MinAmount                 *float64 `json:"min_amount"`
-	MaxAmount                 *float64 `json:"max_amount"`
-	DailyLimit                *float64 `json:"daily_limit"`
-	OrderTimeoutMin           *int     `json:"order_timeout_minutes"`
-	MaxPendingOrders          *int     `json:"max_pending_orders"`
-	EnabledTypes              []string `json:"enabled_payment_types"`
-	BalanceDisabled           *bool    `json:"balance_disabled"`
-	BalanceRechargeMultiplier *float64 `json:"balance_recharge_multiplier"`
-	SubscriptionUSDToCNYRate  *float64 `json:"subscription_usd_to_cny_rate"`
-	RechargeFeeRate           *float64 `json:"recharge_fee_rate"`
+	Enabled                   *bool     `json:"enabled"`
+	MinAmount                 *float64  `json:"min_amount"`
+	MaxAmount                 *float64  `json:"max_amount"`
+	DailyLimit                *float64  `json:"daily_limit"`
+	OrderTimeoutMin           *int      `json:"order_timeout_minutes"`
+	MaxPendingOrders          *int      `json:"max_pending_orders"`
+	EnabledTypes              []string  `json:"enabled_payment_types"`
+	VisibleOrderTypes         *[]string `json:"visible_order_types"`
+	BalanceDisabled           *bool     `json:"balance_disabled"`
+	BalanceRechargeMultiplier *float64  `json:"balance_recharge_multiplier"`
+	SubscriptionUSDToCNYRate  *float64  `json:"subscription_usd_to_cny_rate"`
+	RechargeFeeRate           *float64  `json:"recharge_fee_rate"`
 	// RechargeBonusTiers nil 表示不更新；空切片表示清空阶梯。
 	RechargeBonusTiers  *[]RechargeBonusTier `json:"recharge_bonus_tiers"`
 	RechargeBonusMode   *string              `json:"recharge_bonus_mode"`
@@ -230,6 +232,7 @@ func (s *PaymentConfigService) GetPaymentConfig(ctx context.Context) (*PaymentCo
 		SettingPaymentEnabled, SettingMinRechargeAmount, SettingMaxRechargeAmount,
 		SettingDailyRechargeLimit, SettingOrderTimeoutMinutes, SettingMaxPendingOrders,
 		SettingEnabledPaymentTypes, SettingBalancePayDisabled, SettingBalanceRechargeMult, SettingSubscriptionUSDToCNYRate, SettingRechargeFeeRate, SettingLoadBalanceStrategy,
+		SettingPaymentVisibleOrderTypes,
 		SettingRechargeBonusTiers, SettingRechargeBonusMode, SettingRechargeBonusNotice,
 		SettingProductNamePrefix, SettingProductNameSuffix,
 		SettingHelpImageURL, SettingHelpText,
@@ -258,6 +261,7 @@ func (s *PaymentConfigService) parsePaymentConfig(vals map[string]string) *Payme
 		OrderTimeoutMin:           pcParseInt(vals[SettingOrderTimeoutMinutes], defaultOrderTimeoutMin),
 		MaxPendingOrders:          pcParseInt(vals[SettingMaxPendingOrders], defaultMaxPendingOrders),
 		BalanceDisabled:           vals[SettingBalancePayDisabled] == "true",
+		VisibleOrderTypes:         parsePaymentVisibleOrderTypes(vals[SettingPaymentVisibleOrderTypes]),
 		BalanceRechargeMultiplier: normalizeBalanceRechargeMultiplier(pcParseFloat(vals[SettingBalanceRechargeMult], defaultBalanceRechargeMultiplier)),
 		SubscriptionUSDToCNYRate:  normalizeSubscriptionUSDToCNYRate(pcParseFloat(vals[SettingSubscriptionUSDToCNYRate], 0)),
 		RechargeFeeRate:           pcParseFloat(vals[SettingRechargeFeeRate], 0),
@@ -336,6 +340,10 @@ func (s *PaymentConfigService) getStripePublishableKey(ctx context.Context) stri
 // nil-check before serialisation — this is inherent to patch-style update patterns
 // and cannot be meaningfully decomposed without introducing unnecessary abstraction.
 func (s *PaymentConfigService) UpdatePaymentConfig(ctx context.Context, req UpdatePaymentConfigRequest) error {
+	visibleOrderTypesValue, err := encodePaymentVisibleOrderTypes(req.VisibleOrderTypes)
+	if err != nil {
+		return err
+	}
 	if req.BalanceRechargeMultiplier != nil {
 		v := *req.BalanceRechargeMultiplier
 		if math.IsNaN(v) || math.IsInf(v, 0) || v <= 0 {
@@ -393,6 +401,9 @@ func (s *PaymentConfigService) UpdatePaymentConfig(ctx context.Context, req Upda
 	}
 	if req.EnabledTypes != nil {
 		m[SettingEnabledPaymentTypes] = strings.Join(req.EnabledTypes, ",")
+	}
+	if req.VisibleOrderTypes != nil {
+		m[SettingPaymentVisibleOrderTypes] = visibleOrderTypesValue
 	}
 	if req.BalanceDisabled != nil {
 		m[SettingBalancePayDisabled] = formatBoolOrEmpty(req.BalanceDisabled)

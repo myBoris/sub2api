@@ -573,6 +573,18 @@ const routes: RouteRecordRaw[] = [
     }
   },
   {
+    path: '/admin/billing/catalog',
+    name: 'AdminBillingCatalog',
+    component: () => import('@/views/admin/BillingCatalogView.vue'),
+    meta: { requiresAuth: true, requiresAdmin: true, title: '售价与代付者' }
+  },
+  {
+    path: '/admin/billing/accounts',
+    name: 'AdminAccountBilling',
+    component: () => import('@/views/admin/AccountBillingView.vue'),
+    meta: { requiresAuth: true, requiresAdmin: true, title: '账号支付状态' }
+  },
+  {
     path: '/admin/plugins',
     name: 'AdminPlugins',
     component: () => import('@/views/admin/PluginsView.vue'),

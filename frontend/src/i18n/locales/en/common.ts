@@ -1,5 +1,12 @@
 export default {
   common: {
+    accountBillingReminder: {
+      monthlyDue: 'Due this month',
+      earliestRenewal: 'Earliest renewal {date}',
+      dateNotSet: 'Renewal date not set',
+      noPaymentDue: 'No payment due this month',
+      expiredAccounts: '{count} accounts have expired API access · earliest validity date {date}; other accounts remain available',
+    },
     resourceOwnership: {
       owner: 'Owner',
       unassigned: 'Unassigned (admins only)',

@@ -1083,6 +1083,10 @@ func (s *GatewayService) listSchedulableAccounts(ctx context.Context, groupID *i
 					"tls_fingerprint", acc.IsTLSFingerprintEnabled())
 			}
 		}
+		filtered, err = s.accountRenewalGuard.FilterAccounts(ctx, filtered)
+		if err != nil {
+			return nil, useMixed, err
+		}
 		return s.filterAccountsBySchedulingThreshold(ctx, filtered), useMixed, nil
 	}
 
@@ -1117,6 +1121,10 @@ func (s *GatewayService) listSchedulableAccounts(ctx context.Context, groupID *i
 				"status", acc.Status,
 				"tls_fingerprint", acc.IsTLSFingerprintEnabled())
 		}
+	}
+	accounts, err = s.accountRenewalGuard.FilterAccounts(ctx, accounts)
+	if err != nil {
+		return nil, useMixed, err
 	}
 	accounts = s.filterAccountsBySchedulingThreshold(ctx, accounts)
 	if platform == PlatformGrok || strings.EqualFold(platform, PlatformGrok) {
@@ -1539,6 +1547,9 @@ func (s *GatewayService) getSchedulableAccount(ctx context.Context, accountID in
 	if err != nil || account == nil {
 		return account, err
 	}
+	if err := s.CheckAccountRenewal(ctx, account); err != nil {
+		return nil, err
+	}
 	if s.isAccountBlockedBySchedulingThreshold(ctx, account) {
 		return nil, nil
 	}
@@ -1577,6 +1588,9 @@ func (s *GatewayService) isAccountBlockedBySchedulingThreshold(ctx context.Conte
 }
 
 func (s *GatewayService) hydrateSelectedAccount(ctx context.Context, account *Account) (*Account, error) {
+	if err := s.CheckAccountRenewal(ctx, account); err != nil {
+		return nil, err
+	}
 	if account == nil || s.schedulerSnapshot == nil {
 		return account, nil
 	}

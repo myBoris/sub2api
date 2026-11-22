@@ -287,6 +287,32 @@ export default {
 
   // Payment System
   payment: {
+    tabAccount: 'Account payment',
+    visibleOrderTypes: 'Payment options shown to users',
+    visibleOrderTypesHint: 'Select the payment options users can see and use. Top-up and subscriptions also follow their existing feature settings.',
+    account: {
+      expiryDate: 'Expires on',
+      dateUnavailable: 'Temporarily unavailable',
+      description: 'The amount is the total unpaid monthly sale price of accounts assigned to you in Account Payment Status, charged in CNY. This payment renews accounts and does not add API balance.',
+      renewalHint: 'After payment, this billing period is marked paid and the accounts’ renewal dates are updated to next month.',
+      expiryPolicy: 'API access remains available through the validity date. Only expired accounts stop serving requests from the next day; other accounts remain available. Renewal payments restore access according to the updated actual validity date. Rolling the displayed renewal date does not extend API validity.',
+      apiExpired: 'API expired',
+      apiNotExpired: 'API not expired',
+      validThrough: 'Valid through {date}',
+      apiUnrestricted: 'No API validity date set',
+      month: 'Billing period: {month}',
+      noDue: 'No account fees are due this month',
+      account: 'Account',
+      renewalDate: 'Renewal date',
+      price: 'Price (CNY)',
+      dateNotSet: 'Not set',
+      total: 'Total account fees',
+      missingDate: 'Some accounts have no renewal date. Contact an administrator to set their dates before paying.',
+      cnyOnly: 'Account payments require a CNY payment method. Contact an administrator to configure one.',
+      quoteChanged: 'Account fees or renewal details have changed. Review the updated bill before paying.',
+      launchPending: 'WeChat payment has not completed. Your order is saved. Check its payment status, or cancel this order before paying again.',
+    },
+
     title: 'Recharge / Subscription',
     amountLabel: 'Amount',
     paymentAmount: 'Payment Amount',
@@ -380,6 +406,7 @@ export default {
     },
     result: {
       success: 'Payment Successful',
+      accountSuccess: 'Account renewal successful',
       subscriptionSuccess: 'Subscription Successful',
       processing: 'Payment Processing',
       processingHint: 'Payment confirmation is still pending. This page will refresh automatically.',
@@ -515,6 +542,7 @@ export default {
       orderType: 'Order Type',
       orders: 'Orders',
       balanceOrder: 'Balance Top-Up',
+      accountOrder: 'Account payment',
       subscriptionOrder: 'Subscription',
       paidAt: 'Paid At',
       completedAt: 'Completed At',

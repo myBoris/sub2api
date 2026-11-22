@@ -7,7 +7,7 @@ import AmountInput from '@/components/payment/AmountInput.vue'
 import SubscriptionPlanCard from '@/components/payment/SubscriptionPlanCard.vue'
 import en from '@/i18n/locales/en'
 import zh from '@/i18n/locales/zh'
-import type { CheckoutInfoResponse, MethodLimit, SubscriptionPlan } from '@/types/payment'
+import type { AccountPaymentQuote, CheckoutInfoResponse, MethodLimit, SubscriptionPlan } from '@/types/payment'
 
 const routeState = vi.hoisted(() => ({
   path: '/purchase',
@@ -24,6 +24,9 @@ const showError = vi.hoisted(() => vi.fn())
 const showInfo = vi.hoisted(() => vi.fn())
 const showWarning = vi.hoisted(() => vi.fn())
 const getCheckoutInfo = vi.hoisted(() => vi.fn())
+const getAccountQuote = vi.hoisted(() => vi.fn())
+const getUserBillingSummary = vi.hoisted(() => vi.fn())
+const authUser = vi.hoisted(() => ({ username: 'demo-user', balance: 0, role: 'user' }))
 const bridgeInvoke = vi.hoisted(() => vi.fn())
 const translate = vi.hoisted(() => vi.fn((key: string) => key))
 // Public settings live in a reactive holder so tests can flip feature flags after mount
@@ -57,10 +60,7 @@ vi.mock('vue-i18n', async () => {
 
 vi.mock('@/stores/auth', () => ({
   useAuthStore: () => ({
-    user: {
-      username: 'demo-user',
-      balance: 0,
-    },
+    user: authUser,
     refreshUser,
   }),
 }))
@@ -99,8 +99,11 @@ vi.mock('@/stores', async () => {
 vi.mock('@/api/payment', () => ({
   paymentAPI: {
     getCheckoutInfo,
+    getAccountQuote,
   },
 }))
+
+vi.mock('@/api/accountBilling', () => ({ getUserBillingSummary }))
 
 vi.mock('@/utils/device', () => ({
   isMobileDevice: () => true,
@@ -884,6 +887,205 @@ describe('PaymentView subscription feature flag', () => {
     expect(wrapper.text()).not.toContain('payment.billingUnavailable')
     expect(wrapper.text()).not.toContain('payment.rechargeAccount')
     expect(wrapper.findAllComponents(SubscriptionPlanCard).length).toBeGreaterThan(0)
+    wrapper.unmount()
+  })
+})
+
+
+describe('account payment', () => {
+  const quote: AccountPaymentQuote = {
+    month: '2026-11', amount_due: 120, quote_token: 'quote-current',
+    accounts: [{ account_id: 5, account_name: 'My account', price: 120, renewal_date: '2026-11-30' }],
+  }
+  beforeEach(() => {
+    vi.useRealTimers()
+    routeState.path = '/purchase'
+    routeState.query = { tab: 'account' }
+    appStoreState.setPublicSettings({ subscription_enabled: true })
+    window.localStorage.clear()
+    createOrder.mockReset().mockResolvedValue({
+      order_id: 50, amount: 120, pay_amount: 123.6, fee_rate: 3,
+      qr_code: 'qr', currency: 'CNY', expires_at: '2099-12-01T00:00:00Z',
+    })
+    getAccountQuote.mockReset().mockResolvedValue({ data: quote })
+    getUserBillingSummary.mockReset().mockResolvedValue({ month: '2026-11', amount_due: 120, total_amount: 120, accounts: [] })
+    authUser.role = 'user'
+    showWarning.mockReset()
+  })
+
+  async function mountAccount(checkout: Partial<CheckoutInfoResponse> = {}) {
+    getCheckoutInfo.mockReset().mockResolvedValue(checkoutInfoFixture({
+      visible_order_types: ['account'], recharge_fee_rate: 3,
+      ...checkout,
+    }))
+    const wrapper = shallowMount(PaymentView, { global: { stubs: {
+      AppLayout: { template: '<div><slot /></div>' }, Teleport: true, Transition: false,
+    } } })
+    await flushPromises()
+    await flushPromises()
+    return wrapper
+  }
+
+  it('shows a compact fixed CNY amount, expiry date and refresh without account details or long descriptions', async () => {
+    const wrapper = await mountAccount()
+    expect(wrapper.findComponent(AmountInput).exists()).toBe(false)
+    expect(wrapper.get('[data-testid="account-payment-summary"]').text()).not.toContain('My account')
+    expect(wrapper.find('table').exists()).toBe(false)
+    expect(wrapper.text()).not.toContain('payment.account.description')
+    expect(wrapper.text()).not.toContain('payment.account.renewalHint')
+    expect(wrapper.text()).not.toContain('payment.account.expiryPolicy')
+    expect(wrapper.find('[data-testid="account-payment-refresh"]').exists()).toBe(true)
+    expect(wrapper.text()).toContain('2026-11-30')
+    expect(wrapper.text()).toContain(formatPaymentAmount(120, 'CNY'))
+    expect(wrapper.get('[data-testid="account-payment-submit"]').attributes('disabled')).toBeUndefined()
+    wrapper.unmount()
+  })
+
+  it('revalidates the quote before using the shared payment flow without bonus or conversion', async () => {
+    const wrapper = await mountAccount({ balance_recharge_multiplier: 3, subscription_usd_to_cny_rate: 7 })
+    await wrapper.get('[data-testid="account-payment-submit"]').trigger('click')
+    await flushPromises()
+    expect(getAccountQuote).toHaveBeenCalledTimes(2)
+    expect(createOrder).toHaveBeenCalledWith(expect.objectContaining({
+      amount: 120, order_type: 'account', account_quote_token: 'quote-current', payment_type: 'wxpay',
+    }))
+    wrapper.unmount()
+  })
+
+  it('requires review when the bill changes after it is shown', async () => {
+    const wrapper = await mountAccount()
+    getAccountQuote.mockResolvedValueOnce({ data: { ...quote, quote_token: 'quote-updated', amount_due: 125 } })
+    await wrapper.get('[data-testid="account-payment-submit"]').trigger('click')
+    await flushPromises()
+    expect(createOrder).not.toHaveBeenCalled()
+    expect(showWarning).toHaveBeenCalledWith('payment.account.quoteChanged')
+    wrapper.unmount()
+  })
+
+  it('disables payment when any account lacks a renewal date', async () => {
+    getAccountQuote.mockResolvedValue({ data: { ...quote, accounts: [{ ...quote.accounts[0], renewal_date: null }] } })
+    const wrapper = await mountAccount()
+    expect(wrapper.text()).toContain('payment.account.missingDate')
+    expect(wrapper.get('[data-testid="account-payment-submit"]').attributes('disabled')).toBeDefined()
+    wrapper.unmount()
+  })
+
+  it('shows the real validity date instead of a rolled renewal date and permits renewal', async () => {
+    getAccountQuote.mockResolvedValue({ data: { ...quote, accounts: [{
+      ...quote.accounts[0], renewal_date: '2026-12-30', valid_through: '2026-10-30', expired: true,
+    }] } })
+    const wrapper = await mountAccount()
+    expect(wrapper.get('[data-testid="account-payment-expiry"]').text()).toContain('2026-10-30')
+    expect(wrapper.get('[data-testid="account-payment-expiry"]').text()).not.toContain('2026-12-30')
+    // Being expired is the reason to renew and must not prevent payment.
+    expect(wrapper.get('[data-testid="account-payment-submit"]').attributes('disabled')).toBeUndefined()
+    wrapper.unmount()
+  })
+
+  it('allows only CNY methods for account payment', async () => {
+    const method = checkoutInfoFixture().data.methods.wxpay
+    const wrapper = await mountAccount({ methods: { stripe: { ...method, currency: 'USD' } } })
+    expect(wrapper.text()).not.toContain('payment.account.cnyOnly')
+    expect(wrapper.find('[data-testid="account-payment-methods"]').exists()).toBe(false)
+    expect(wrapper.get('[data-testid="account-payment-submit"]').attributes('disabled')).toBeDefined()
+    wrapper.unmount()
+  })
+
+  it('keeps methods, confirmation and a disabled pay button visible for a paid bill, with expiry from the user summary', async () => {
+    getAccountQuote.mockResolvedValue({ data: { ...quote, amount_due: 0, accounts: [] } })
+    getUserBillingSummary.mockResolvedValue({ accounts: [{ account_id: 5, renewal_date: '2027-01-30', valid_through: '2026-12-30', payment_status: 'paid', price: 120 }] })
+    const wrapper = await mountAccount()
+    expect(wrapper.get('[data-testid="account-payment-amount"]').text()).toBe(formatPaymentAmount(0, 'CNY'))
+    expect(wrapper.get('[data-testid="account-payment-expiry"]').text()).toContain('2026-12-30')
+    expect(wrapper.find('payment-method-selector-stub').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="account-payment-confirmation"]').exists()).toBe(true)
+    expect(wrapper.get('[data-testid="account-payment-submit"]').attributes('disabled')).toBeDefined()
+    wrapper.unmount()
+  })
+
+  it('uses the earliest validity date across owned accounts and falls back only for old API responses', async () => {
+    getAccountQuote.mockResolvedValue({ data: { ...quote, accounts: [
+      { ...quote.accounts[0], renewal_date: '2027-01-30', valid_through: '2026-12-30' },
+      { ...quote.accounts[0], account_id: 6, renewal_date: '2026-12-15' },
+      { ...quote.accounts[0], account_id: 7, renewal_date: '2026-01-01', valid_through: null },
+    ] } })
+    const wrapper = await mountAccount()
+    expect(wrapper.get('[data-testid="account-payment-expiry"]').text()).toContain('2026-12-15')
+    wrapper.unmount()
+  })
+
+  it('does not request the ordinary user billing summary for an administrator', async () => {
+    authUser.role = 'admin'
+    const wrapper = await mountAccount()
+    expect(getUserBillingSummary).not.toHaveBeenCalled()
+    expect(wrapper.get('[data-testid="account-payment-expiry"]').text()).toContain('2026-11-30')
+    wrapper.unmount()
+  })
+
+  it('keeps the quoted expiry and payment available if the supplementary summary fails', async () => {
+    getUserBillingSummary.mockRejectedValue(new Error('summary unavailable'))
+    const wrapper = await mountAccount()
+    expect(wrapper.get('[data-testid="account-payment-expiry"]').text()).toContain('2026-11-30')
+    expect(wrapper.get('[data-testid="account-payment-submit"]').attributes('disabled')).toBeUndefined()
+    wrapper.unmount()
+  })
+
+  it('rounds the account fee in decimal cents without floating point overcharging', async () => {
+    getAccountQuote.mockResolvedValue({ data: { ...quote, amount_due: 100, accounts: [{ ...quote.accounts[0], price: 100 }] } })
+    const wrapper = await mountAccount({ recharge_fee_rate: 0.28 })
+    expect(wrapper.get('[data-testid="account-payment-submit"]').text()).toContain(formatPaymentAmount(100.28, 'CNY'))
+    wrapper.unmount()
+  })
+
+  it.each(['fail', 'cancel'])('preserves the pending account order when WeChat reports %s', async (status) => {
+    createOrder.mockResolvedValue(jsapiOrderFixture('account-resume'))
+    ;(window as Window & { WeixinJSBridge?: { invoke: typeof bridgeInvoke } }).WeixinJSBridge = { invoke: bridgeInvoke }
+    bridgeInvoke.mockImplementation((_action, _payload, callback) => callback({ err_msg: `get_brand_wcpay_request:${status}` }))
+    const wrapper = await mountAccount()
+    await wrapper.get('[data-testid="account-payment-submit"]').trigger('click')
+    await flushPromises()
+    expect(createOrder).toHaveBeenCalledTimes(1)
+    expect(JSON.parse(window.localStorage.getItem(PAYMENT_RECOVERY_STORAGE_KEY) || '{}')).toMatchObject({ orderId: 123, orderType: 'account' })
+    expect(wrapper.find('payment-status-panel-stub').exists()).toBe(true)
+    expect(showWarning).toHaveBeenCalledWith('payment.account.launchPending')
+    wrapper.unmount()
+  })
+
+  it('keeps the original account order recoverable when the WeChat bridge is unavailable', async () => {
+    const wrapper = await mountAccount()
+    vi.useFakeTimers()
+    createOrder.mockResolvedValue(jsapiOrderFixture('account-no-bridge'))
+    ;(window as Window & { WeixinJSBridge?: { invoke: typeof bridgeInvoke } }).WeixinJSBridge = undefined
+    await wrapper.get('[data-testid="account-payment-submit"]').trigger('click')
+    await flushPromises()
+    await vi.advanceTimersByTimeAsync(4000)
+    await flushPromises()
+    expect(createOrder).toHaveBeenCalledTimes(1)
+    expect(JSON.parse(window.localStorage.getItem(PAYMENT_RECOVERY_STORAGE_KEY) || '{}')).toMatchObject({ orderId: 123, orderType: 'account' })
+    expect(wrapper.find('payment-status-panel-stub').exists()).toBe(true)
+    expect(showWarning).toHaveBeenCalledWith('payment.account.launchPending')
+    wrapper.unmount()
+    vi.useRealTimers()
+  })
+
+  it('uses the server order type for token-only WeChat resumes and preserves a failed account launch', async () => {
+    routeState.query = { wechat_resume_token: 'signed-account-resume' }
+    createOrder.mockResolvedValue({ ...jsapiOrderFixture('account-resume'), order_type: 'account' })
+    ;(window as Window & { WeixinJSBridge?: { invoke: typeof bridgeInvoke } }).WeixinJSBridge = { invoke: bridgeInvoke }
+    bridgeInvoke.mockImplementation((_action, _payload, callback) => callback({ err_msg: 'get_brand_wcpay_request:fail' }))
+    const wrapper = await mountAccount()
+    expect(createOrder).toHaveBeenCalledTimes(1)
+    expect(createOrder).toHaveBeenCalledWith(expect.objectContaining({ wechat_resume_token: 'signed-account-resume' }))
+    expect(JSON.parse(window.localStorage.getItem(PAYMENT_RECOVERY_STORAGE_KEY) || '{}')).toMatchObject({ orderId: 123, orderType: 'account' })
+    expect(wrapper.find('payment-status-panel-stub').exists()).toBe(true)
+    expect(showWarning).toHaveBeenCalledWith('payment.account.launchPending')
+    wrapper.unmount()
+  })
+
+  it('honors an explicit empty list of visible payment options', async () => {
+    const wrapper = await mountAccount({ visible_order_types: [] })
+    expect(wrapper.text()).toContain('payment.billingUnavailable')
+    expect(getAccountQuote).not.toHaveBeenCalled()
     wrapper.unmount()
   })
 })

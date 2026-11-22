@@ -19,12 +19,15 @@
           ({{ t('payment.orders.fee') }} {{ row.fee_rate }}%)
         </span>
         <div v-if="row.amount !== row.pay_amount || (row.bonus_amount ?? 0) > 0" class="text-xs text-gray-500">
-          {{ t('payment.orders.creditedAmount') }}: {{ creditedAmountSymbol }}{{ row.amount.toFixed(2) }}
+          {{ t(row.order_type === 'account' ? 'payment.account.total' : 'payment.orders.creditedAmount') }}: {{ row.order_type === 'account' ? currencySymbol('CNY') : creditedAmountSymbol }}{{ row.amount.toFixed(2) }}
           <span v-if="(row.bonus_amount ?? 0) > 0" class="ml-1 text-amber-600 dark:text-amber-400">
             ({{ t('payment.orders.bonusIncluded', { amount: creditedAmountSymbol + (row.bonus_amount ?? 0).toFixed(2) }) }})
           </span>
         </div>
       </div>
+    </template>
+    <template #cell-order_type="{ value }">
+      <span class="text-sm">{{ t(value === 'account' ? 'payment.admin.accountOrder' : value === 'subscription' ? 'payment.admin.subscriptionOrder' : 'payment.admin.balanceOrder') }}</span>
     </template>
     <template #cell-payment_type="{ value }">
       <span class="text-sm text-gray-700 dark:text-gray-300">{{ t('payment.methods.' + value, value) }}</span>
@@ -75,6 +78,7 @@ const columns = computed((): Column[] => {
     cols.push({ key: 'user_email', label: t('payment.admin.colUser') })
   }
   cols.push(
+    { key: 'order_type', label: t('payment.admin.orderType') },
     { key: 'pay_amount', label: t('payment.orders.payAmount') },
     { key: 'payment_type', label: t('payment.orders.paymentMethod') },
     { key: 'status', label: t('payment.orders.status') },

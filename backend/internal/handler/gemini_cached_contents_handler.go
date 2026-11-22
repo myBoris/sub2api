@@ -171,6 +171,9 @@ func (h *GatewayHandler) GeminiCachedContentsCreate(c *gin.Context) {
 	for attempts := 0; attempts < geminiCachedContentCreateMaxAttempts; {
 		selection, err := h.gatewayService.SelectAccountWithLoadAwareness(c.Request.Context(), apiKey.GroupID, "", modelName, excluded, "", int64(0))
 		if err != nil {
+			if writeAccountRenewalError(c, err) {
+				return
+			}
 			if failoverClientGone(c) {
 				return
 			}
@@ -238,6 +241,9 @@ func (h *GatewayHandler) GeminiCachedContentsCreate(c *gin.Context) {
 		upstream, err := svc.CreateUpstream(c.Request.Context(), account, req, mappedModel, publicID, ttl)
 		accountReleaseFunc()
 		if err != nil {
+			if writeAccountRenewalError(c, err) {
+				return
+			}
 			var upErr *service.GeminiCachedContentUpstreamError
 			if errors.As(err, &upErr) {
 				reqLog.Info("gemini.cached_content.upstream_create_failed", zap.Int64("account_id", account.ID), zap.Int("status", upErr.StatusCode))
@@ -423,6 +429,12 @@ func (h *GatewayHandler) GeminiCachedContentsPatch(c *gin.Context) {
 		googleError(c, http.StatusServiceUnavailable, geminiCachedContentUnavailableMessage)
 		return
 	}
+	if err := h.gatewayService.CheckAccountRenewal(c.Request.Context(), account); err != nil {
+		if !writeAccountRenewalError(c, err) {
+			googleError(c, http.StatusServiceUnavailable, "账号续费状态暂不可用，请稍后重试")
+		}
+		return
+	}
 	ttl, err := service.ParseGeminiCachedContentPatchRequest(body, c.Query("updateMask"), svc.Now(), svc.MaxTTLForAccount(account))
 	if err != nil {
 		googleError(c, http.StatusBadRequest, err.Error())
@@ -484,6 +496,9 @@ func (h *GatewayHandler) GeminiCachedContentsPatch(c *gin.Context) {
 				reqLog.Warn("gemini.cached_content.release_mutation_failed", zap.Error(releaseErr))
 			}
 			cancelPersist()
+		}
+		if writeAccountRenewalError(c, err) {
+			return
 		}
 		if upstreamRejected {
 			if upErr.NotFound() {

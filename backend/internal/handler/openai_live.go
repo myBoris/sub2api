@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"io"
@@ -227,6 +228,19 @@ func (h *OpenAIGatewayHandler) LiveSideband(c *gin.Context) {
 		h.errorResponse(c, http.StatusNotFound, "not_found_error", "Live call not found")
 		return
 	}
+	renewalAccount, err := h.gatewayService.LiveCallRenewalAccount(c.Request.Context(), record)
+	if err != nil {
+		if !service.WriteAccountRenewalError(c, err) {
+			h.errorResponse(c, http.StatusServiceUnavailable, "api_error", "Live call account is unavailable")
+		}
+		return
+	}
+	renewalCtx, renewalCancel, err := h.gatewayService.WithAccountRenewalContext(c.Request.Context(), renewalAccount)
+	if err != nil {
+		service.WriteAccountRenewalError(c, err)
+		return
+	}
+	defer renewalCancel()
 	downstream, err := coderws.Accept(c.Writer, c.Request, &coderws.AcceptOptions{
 		InsecureSkipVerify: true,
 	})
@@ -234,7 +248,11 @@ func (h *OpenAIGatewayHandler) LiveSideband(c *gin.Context) {
 		return
 	}
 	defer func() { _ = downstream.CloseNow() }()
-	if err := h.gatewayService.ProxyLiveSideband(c.Request.Context(), record, downstream); err != nil {
+	if err := h.gatewayService.ProxyLiveSideband(renewalCtx, record, downstream); err != nil {
+		if service.IsAccountRenewalExpired(context.Cause(renewalCtx)) {
+			_ = downstream.Close(coderws.StatusPolicyViolation, service.AccountRenewalExpiredWSReason)
+			return
+		}
 		_ = downstream.Close(coderws.StatusInternalError, "live sideband closed")
 		return
 	}

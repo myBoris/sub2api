@@ -251,6 +251,8 @@ func (s *PaymentService) executeFulfillment(ctx context.Context, oid int64) erro
 		return s.ExecuteSubscriptionFulfillment(ctx, oid)
 	case payment.OrderTypeBalance:
 		return s.ExecuteBalanceFulfillment(ctx, oid)
+	case accountPaymentOrderType:
+		return s.ExecuteAccountPaymentFulfillment(ctx, oid)
 	default:
 		// 不支持的订单类型不履约：标记 FAILED 后正常返回，避免支付回调持续 500 重试。
 		s.rejectUnsupportedOrderType(ctx, o)
@@ -259,7 +261,7 @@ func (s *PaymentService) executeFulfillment(ctx context.Context, oid int64) erro
 }
 
 func isSupportedPaymentOrderType(orderType string) bool {
-	return orderType == payment.OrderTypeBalance || orderType == payment.OrderTypeSubscription
+	return orderType == payment.OrderTypeBalance || orderType == payment.OrderTypeSubscription || orderType == accountPaymentOrderType
 }
 
 func (s *PaymentService) rejectUnsupportedOrderType(ctx context.Context, o *dbent.PaymentOrder) {

@@ -311,6 +311,32 @@ export default {
 
   // Payment System
   payment: {
+    tabAccount: '按账号支付',
+    visibleOrderTypes: '用户可见的支付入口',
+    visibleOrderTypesHint: '勾选用户可以看到和使用的支付入口。充值与订阅仍受原有功能开关控制。',
+    account: {
+      expiryDate: '到期时间',
+      dateUnavailable: '暂不可用',
+      description: '金额按当前属于您的账号在“账号支付状态”中的当月未付售价汇总，以人民币结算；此付款用于账号续费，不计入 API 余额。',
+      renewalHint: '支付成功后，系统会自动标记本账期已支付，并将这些账号的续费时间更新到下个月。',
+      expiryPolicy: '有效期截止当天仍可调用 API，次日起仅停止已到期账号，其他未到期账号仍可用。付款续费后，根据更新后的实际有效期恢复调用；展示的续费时间自动顺延不会延长 API 有效期。',
+      apiExpired: 'API已到期',
+      apiNotExpired: 'API未到期',
+      validThrough: '有效期至 {date}',
+      apiUnrestricted: '未设置 API 有效期',
+      month: '账期：{month}',
+      noDue: '本月暂无需要支付的账号费用',
+      account: '账号',
+      renewalDate: '续费时间',
+      price: '售价（人民币）',
+      dateNotSet: '未设置',
+      total: '账号费用合计',
+      missingDate: '部分账号尚未设置续费时间，请联系管理员设置后再支付。',
+      cnyOnly: '按账号支付仅支持人民币，请联系管理员配置人民币支付方式。',
+      quoteChanged: '账号费用或续费信息已更新，请确认最新账单后重新支付。',
+      launchPending: '微信支付尚未完成，当前订单已保留。请核对支付状态；如需重新付款，请先取消当前订单。',
+    },
+
     title: '充值/订阅',
     amountLabel: '充值金额',
     paymentAmount: '支付金额',
@@ -404,6 +430,7 @@ export default {
     },
     result: {
       success: '支付成功',
+      accountSuccess: '账号续费成功',
       subscriptionSuccess: '订阅成功',
       processing: '支付处理中',
       processingHint: '支付结果仍在确认中，页面会自动刷新。',
@@ -539,6 +566,7 @@ export default {
       orderType: '订单类型',
       orders: '订单',
       balanceOrder: '余额充值',
+      accountOrder: '按账号支付',
       subscriptionOrder: '订阅',
       paidAt: '支付时间',
       completedAt: '完成时间',

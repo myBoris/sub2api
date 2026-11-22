@@ -1,5 +1,12 @@
 export default {
   common: {
+    accountBillingReminder: {
+      monthlyDue: '本月待充值',
+      earliestRenewal: '最早续费 {date}',
+      dateNotSet: '续费时间待设置',
+      noPaymentDue: '本月无需充值',
+      expiredAccounts: '{count} 个账号API已到期 · 最早截止 {date}；其他未到期账号仍可用',
+    },
     resourceOwnership: {
       owner: '所属用户',
       unassigned: '未分配（仅管理员）',
