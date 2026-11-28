@@ -579,6 +579,12 @@ const routes: RouteRecordRaw[] = [
     meta: { requiresAuth: true, requiresAdmin: true, title: '售价与代付者' }
   },
   {
+    path: '/admin/billing/subscription-requests',
+    name: 'AdminSubscriptionRequests',
+    component: () => import('@/views/admin/SubscriptionRequestsView.vue'),
+    meta: { requiresAuth: true, requiresAdmin: true, title: '订阅账号申请' }
+  },
+  {
     path: '/admin/billing/accounts',
     name: 'AdminAccountBilling',
     component: () => import('@/views/admin/AccountBillingView.vue'),

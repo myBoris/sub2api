@@ -214,9 +214,9 @@ func TestSyncAccountsCapturesOnlyNewAccountAnchorsAndCountsUndatedRows(t *testin
 
 func renewalTestAccountRows(t *testing.T, date string) *sqlmock.Rows {
 	t.Helper()
-	return sqlmock.NewRows([]string{"account_id", "name", "platform", "renewal_date", "plan_id", "plan_name", "price_cents", "payer_id", "payer_name", "history", "created_at"}).
+	return sqlmock.NewRows([]string{"account_id", "name", "platform", "renewal_date", "plan_id", "plan_name", "price_cents", "payer_id", "payer_name", "history", "created_at", "cost_cents"}).
 		AddRow(11, "Owned account", "openai", renewalTestTime(t, date), nil, "", 15000, nil, "",
-			`[{"month":"2027-02","status":"unpaid","amount":150.00},{"month":"2027-01","status":"paid","amount":120.00}]`, renewalTestTime(t, "2027-01-01"))
+			`[{"month":"2027-02","status":"unpaid","amount":150.00},{"month":"2027-01","status":"paid","amount":120.00}]`, renewalTestTime(t, "2027-01-01"), 0)
 }
 
 func TestUpdateAccountPreservesAnchorWhenOtherFieldsSubmitProjectedDate(t *testing.T) {
@@ -234,8 +234,8 @@ func TestUpdateAccountPreservesAnchorWhenOtherFieldsSubmitProjectedDate(t *testi
 		WithArgs("2027-02-28", int64(11)).WillReturnResult(sqlmock.NewResult(0, 1))
 	mock.ExpectQuery(`SELECT platform FROM accounts WHERE id=\$1`).
 		WithArgs(int64(11)).WillReturnRows(sqlmock.NewRows([]string{"platform"}).AddRow("openai"))
-	mock.ExpectExec(`UPDATE custom_account_billing SET renewal_date=\$1,plan_id=\$2,price_cents=\$3,payer_id=\$4,history=\$5::jsonb,updated_at=NOW\(\) WHERE account_id=\$6`).
-		WithArgs("2027-02-28", nil, int64(17500), nil, sqlmock.AnyArg(), int64(11)).WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectExec(`UPDATE custom_account_billing SET renewal_date=\$1,plan_id=\$2,price_cents=\$3,payer_id=\$4,history=\$5::jsonb,cost_cents=\$6,updated_at=NOW\(\) WHERE account_id=\$7`).
+		WithArgs("2027-02-28", nil, int64(17500), nil, sqlmock.AnyArg(), int64(0), int64(11)).WillReturnResult(sqlmock.NewResult(0, 1))
 	expectNoAccessRows(mock, "{11}")
 	mock.ExpectCommit()
 	account, err := store.UpdateAccount(context.Background(), 11, AccountUpdate{RenewalDate: billingTestDate("2027-02-28"), Price: 17500, PaymentStatus: "paid"})
@@ -319,8 +319,8 @@ func TestUpdateAccountDateChangeFlagProtectsStaleFormsAndKeepsLegacyRequestsComp
 			if tt.want != nil {
 				storedDate = *tt.want
 			}
-			mock.ExpectExec(`UPDATE custom_account_billing SET renewal_date=\$1,plan_id=\$2,price_cents=\$3,payer_id=\$4,history=\$5::jsonb,updated_at=NOW\(\) WHERE account_id=\$6`).
-				WithArgs(storedDate, nil, int64(17500), nil, sqlmock.AnyArg(), int64(11)).WillReturnResult(sqlmock.NewResult(0, 1))
+			mock.ExpectExec(`UPDATE custom_account_billing SET renewal_date=\$1,plan_id=\$2,price_cents=\$3,payer_id=\$4,history=\$5::jsonb,cost_cents=\$6,updated_at=NOW\(\) WHERE account_id=\$7`).
+				WithArgs(storedDate, nil, int64(17500), nil, sqlmock.AnyArg(), int64(0), int64(11)).WillReturnResult(sqlmock.NewResult(0, 1))
 			if tt.write != "" {
 				mock.ExpectExec(`(?s)INSERT INTO custom_account_billing_access.*SET valid_through=EXCLUDED.valid_through,updated_at=NOW\(\)`).
 					WithArgs(int64(11), tt.requested).WillReturnResult(sqlmock.NewResult(0, 1))
@@ -381,8 +381,8 @@ func TestListImmediatelyProjectsDatesAndPreservesSelectedMonthPaymentSnapshots(t
 		WithArgs("2027-02-28", int64(11)).WillReturnResult(sqlmock.NewResult(0, 1))
 	expectNoAccessRows(mock, "{11}")
 	mock.ExpectCommit()
-	mock.ExpectQuery(`SELECT id,platform,name,price_cents FROM custom_billing_plans`).
-		WillReturnRows(sqlmock.NewRows([]string{"id", "platform", "name", "price_cents"}))
+	mock.ExpectQuery(`SELECT id,platform,name,price_cents,cost_cents FROM custom_billing_plans`).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "platform", "name", "price_cents", "cost_cents"}))
 	mock.ExpectQuery(`SELECT id,name FROM custom_billing_payers`).
 		WillReturnRows(sqlmock.NewRows([]string{"id", "name"}))
 	list, err := store.List(context.Background(), "2027-01")

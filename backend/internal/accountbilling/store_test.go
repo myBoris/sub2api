@@ -60,9 +60,9 @@ func TestUserSummaryScopesRowsToCurrentOwnerAndAddsExactUnpaidAmountWithoutColle
 	// Requiring the ownership EXISTS clause is the regression assertion: a user
 	// must never receive another user's or an unassigned account's billing row.
 	mock.ExpectQuery(`(?s)SELECT b.account_id.*WHERE a.deleted_at IS NULL AND EXISTS\(SELECT 1 FROM custom_user_accounts o WHERE o.account_id=b.account_id AND o.user_id=\$1\).*FOR UPDATE OF b`).
-		WithArgs(int64(7)).WillReturnRows(sqlmock.NewRows([]string{"account_id", "name", "platform", "renewal_date", "plan_id", "plan_name", "price_cents", "payer_id", "payer_name", "history", "created_at"}).
-		AddRow(11, "Owned unpaid", "openai", nil, nil, "", 10, nil, "", `[{"month":"2026-11","status":"unpaid","amount":0.10}]`, now).
-		AddRow(12, "Owned paid", "anthropic", nil, nil, "", 20, nil, "", `[{"month":"2026-11","status":"paid","amount":0.20}]`, now))
+		WithArgs(int64(7)).WillReturnRows(sqlmock.NewRows([]string{"account_id", "name", "platform", "renewal_date", "plan_id", "plan_name", "price_cents", "payer_id", "payer_name", "history", "created_at", "cost_cents"}).
+		AddRow(11, "Owned unpaid", "openai", nil, nil, "", 10, nil, "", `[{"month":"2026-11","status":"unpaid","amount":0.10}]`, now, 0).
+		AddRow(12, "Owned paid", "anthropic", nil, nil, "", 20, nil, "", `[{"month":"2026-11","status":"paid","amount":0.20}]`, now, 0))
 	expectNoAccessRows(mock, "{11,12}")
 	mock.ExpectCommit()
 	page, err := store.UserSummary(context.Background(), 7)
@@ -110,7 +110,7 @@ func TestUserSummaryHasEmptyAccountsAndZeroDueWithoutOwnedLedgerRows(t *testing.
 	mock.ExpectQuery(`SELECT EXISTS\(SELECT 1 FROM users WHERE id=\$1 AND deleted_at IS NULL AND status='active' AND role='user'\)`).
 		WithArgs(int64(7)).WillReturnRows(sqlmock.NewRows([]string{"exists"}).AddRow(true))
 	mock.ExpectQuery(`(?s)SELECT b.account_id.*o.user_id=\$1.*FOR UPDATE OF b`).
-		WithArgs(int64(7)).WillReturnRows(sqlmock.NewRows([]string{"account_id", "name", "platform", "renewal_date", "plan_id", "plan_name", "price_cents", "payer_id", "payer_name", "history", "created_at"}))
+		WithArgs(int64(7)).WillReturnRows(sqlmock.NewRows([]string{"account_id", "name", "platform", "renewal_date", "plan_id", "plan_name", "price_cents", "payer_id", "payer_name", "history", "created_at", "cost_cents"}))
 	mock.ExpectCommit()
 	summary, err := store.UserSummary(context.Background(), 7)
 	require.NoError(t, err)
@@ -131,10 +131,10 @@ func TestUserSummaryCreatesNewBusinessMonthUnpaidHistoryWithoutOverwritingPriorP
 	mock.ExpectQuery(`SELECT EXISTS\(SELECT 1 FROM users WHERE id=\$1 AND deleted_at IS NULL AND status='active' AND role='user'\)`).
 		WithArgs(int64(7)).WillReturnRows(sqlmock.NewRows([]string{"exists"}).AddRow(true))
 	mock.ExpectQuery(`(?s)SELECT b.account_id.*o.user_id=\$1.*FOR UPDATE OF b`).
-		WithArgs(int64(7)).WillReturnRows(sqlmock.NewRows([]string{"account_id", "name", "platform", "renewal_date", "plan_id", "plan_name", "price_cents", "payer_id", "payer_name", "history", "created_at"}).
-		AddRow(11, "Private name", "openai", nil, nil, "", 15000, nil, "Private payer", `[{"month":"2027-02","status":"paid","amount":120.00,"payer_name":"Previous payer"}]`, time.Date(2027, 2, 1, 0, 0, 0, 0, time.UTC)))
+		WithArgs(int64(7)).WillReturnRows(sqlmock.NewRows([]string{"account_id", "name", "platform", "renewal_date", "plan_id", "plan_name", "price_cents", "payer_id", "payer_name", "history", "created_at", "cost_cents"}).
+		AddRow(11, "Private name", "openai", nil, nil, "", 15000, nil, "Private payer", `[{"month":"2027-02","status":"paid","amount":120.00,"payer_name":"Previous payer"}]`, time.Date(2027, 2, 1, 0, 0, 0, 0, time.UTC), 0))
 	mock.ExpectExec(`UPDATE custom_account_billing SET history=\$1::jsonb,updated_at=NOW\(\) WHERE account_id=\$2`).
-		WithArgs(`[{"month":"2027-03","status":"unpaid","amount":150.00,"payer_name":"Private payer"},{"month":"2027-02","status":"paid","amount":120.00,"payer_name":"Previous payer"}]`, int64(11)).
+		WithArgs(`[{"month":"2027-03","status":"unpaid","amount":150.00,"cost":0.00,"payer_name":"Private payer"},{"month":"2027-02","status":"paid","amount":120.00,"cost":0.00,"payer_name":"Previous payer"}]`, int64(11)).
 		WillReturnResult(sqlmock.NewResult(0, 1))
 	expectNoAccessRows(mock, "{11}")
 	mock.ExpectCommit()

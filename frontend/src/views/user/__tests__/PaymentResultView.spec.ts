@@ -248,6 +248,57 @@ describe('PaymentResultView', () => {
     expect(window.localStorage.getItem(PAYMENT_RECOVERY_STORAGE_KEY)).toBeNull()
   })
 
+  it.each(['PAID', 'RECHARGING'])('refreshes an account payer balance after %s reaches completed fulfillment', async (status) => {
+    vi.useFakeTimers()
+    routeState.query = { resume_token: 'account-paid' }
+    resolveOrderPublicByResumeToken
+      .mockResolvedValueOnce({ data: { ...orderFactory(status), order_type: 'account' } })
+      .mockResolvedValueOnce({ data: { ...orderFactory('COMPLETED'), order_type: 'account' } })
+    refreshUser.mockResolvedValue({ balance: 9999 })
+    const billingPaid = vi.fn()
+    window.addEventListener('account-billing-paid', billingPaid)
+
+    const wrapper = mount(PaymentResultView, { global: { stubs: { OrderStatusBadge: true } } })
+    try {
+      await flushPromises()
+      expect(refreshUser).not.toHaveBeenCalled()
+      expect(billingPaid).not.toHaveBeenCalled()
+
+      await vi.advanceTimersByTimeAsync(2000)
+      await flushPromises()
+      expect(resolveOrderPublicByResumeToken).toHaveBeenCalledTimes(2)
+      expect(refreshUser).toHaveBeenCalledTimes(1)
+      expect(billingPaid).toHaveBeenCalledTimes(1)
+      expect(wrapper.text()).toContain('payment.result.accountSuccess')
+
+      await vi.advanceTimersByTimeAsync(4000)
+      expect(resolveOrderPublicByResumeToken).toHaveBeenCalledTimes(2)
+      expect(refreshUser).toHaveBeenCalledTimes(1)
+    } finally {
+      wrapper.unmount()
+      window.removeEventListener('account-billing-paid', billingPaid)
+    }
+  })
+
+  it('refreshes the payer profile when opening an already completed account order', async () => {
+    routeState.query = { order_id: '42' }
+    pollOrderStatus.mockResolvedValue({ ...orderFactory('COMPLETED'), order_type: 'account' })
+    const wrapper = mount(PaymentResultView, { global: { stubs: { OrderStatusBadge: true } } })
+    await flushPromises()
+    expect(refreshUser).toHaveBeenCalledTimes(1)
+    expect(wrapper.text()).toContain('payment.result.accountSuccess')
+    wrapper.unmount()
+  })
+
+  it('keeps API subscription orders outside the balance refresh flow', async () => {
+    routeState.query = { order_id: '42' }
+    pollOrderStatus.mockResolvedValue({ ...orderFactory('COMPLETED'), order_type: 'subscription' })
+    const wrapper = mount(PaymentResultView, { global: { stubs: { OrderStatusBadge: true } } })
+    await flushPromises()
+    expect(refreshUser).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
+
   it('keeps the successful result when refreshing the user balance fails', async () => {
     routeState.query = {
       resume_token: 'resume-refresh-failure',

@@ -42,18 +42,24 @@ type paymentAccountSnapshot struct {
 	PaymentQuoteAccount
 	AccessSchemaVersion int     `json:"access_schema_version,omitempty"`
 	BillingPrice        Money   `json:"billing_price"`
+	BillingCost         Money   `json:"billing_cost,omitempty"`
 	AnchorDate          *string `json:"anchor_date"`
 	History             History `json:"history"`
 }
 
-// lockPaymentOwner makes the ownership used by a quote stable until commit.
-// These are read locks only; upstream user/account ownership data is never edited.
-func lockPaymentOwner(ctx context.Context, tx *sql.Tx, userID int64) error {
+// Quotes hold shared owner locks. Fulfillment takes the user write lock before
+// billing rows so simultaneous orders cannot deadlock while upgrading locks to
+// replenish the same user's balance. Ownership itself is never edited here.
+func lockPaymentOwner(ctx context.Context, tx *sql.Tx, userID int64, replenishBalance ...bool) error {
 	if userID <= 0 {
 		return ErrForbidden
 	}
 	var id int64
-	err := tx.QueryRowContext(ctx, `SELECT id FROM users WHERE id=$1 AND deleted_at IS NULL AND status='active' FOR SHARE`, userID).Scan(&id)
+	query := `SELECT id FROM users WHERE id=$1 AND deleted_at IS NULL AND status='active' FOR SHARE`
+	if len(replenishBalance) > 0 && replenishBalance[0] {
+		query = `SELECT id FROM users WHERE id=$1 AND deleted_at IS NULL AND status='active' FOR NO KEY UPDATE`
+	}
+	err := tx.QueryRowContext(ctx, query, userID).Scan(&id)
 	if errors.Is(err, sql.ErrNoRows) {
 		return ErrForbidden
 	}
@@ -119,7 +125,7 @@ func buildPaymentQuote(userID int64, month string, accounts []Account, anchors m
 		}
 		quote.Accounts = append(quote.Accounts, item)
 		quote.AmountDue += item.Price
-		snapshots = append(snapshots, paymentAccountSnapshot{PaymentQuoteAccount: item, AccessSchemaVersion: 1, BillingPrice: a.Price, AnchorDate: anchor, History: history})
+		snapshots = append(snapshots, paymentAccountSnapshot{PaymentQuoteAccount: item, AccessSchemaVersion: 1, BillingPrice: a.Price, BillingCost: a.Cost, AnchorDate: anchor, History: history})
 	}
 	raw, err := json.Marshal(struct {
 		UserID    int64                    `json:"user_id"`
@@ -271,7 +277,7 @@ func nextPaidRenewalDate(month string, snapshot paymentAccountSnapshot, current 
 }
 
 func paymentSnapshotStillValid(snapshot paymentAccountSnapshot, account Account, month string, anchor string, now time.Time) bool {
-	if snapshot.BillingPrice != account.Price || snapshot.RenewalDate == nil || account.RenewalDate == nil || snapshot.AnchorDate == nil || *snapshot.AnchorDate != anchor {
+	if snapshot.BillingPrice != account.Price || snapshot.BillingCost != account.Cost || snapshot.RenewalDate == nil || account.RenewalDate == nil || snapshot.AnchorDate == nil || *snapshot.AnchorDate != anchor {
 		return false
 	}
 	// Orders bound before migration 257 never captured an independent access
@@ -284,7 +290,7 @@ func paymentSnapshotStillValid(snapshot paymentAccountSnapshot, account Account,
 	history, ok := historyFor(account, month)
 	samePayer := (history.PayerID == nil && snapshot.History.PayerID == nil) ||
 		(history.PayerID != nil && snapshot.History.PayerID != nil && *history.PayerID == *snapshot.History.PayerID)
-	if !ok || history.Status != "unpaid" || history.Amount != snapshot.Price || !samePayer || history.PayerName != snapshot.History.PayerName {
+	if !ok || history.Status != "unpaid" || history.Amount != snapshot.Price || history.Cost != snapshot.History.Cost || !samePayer || history.PayerName != snapshot.History.PayerName {
 		return false
 	}
 	if sameRenewalDate(snapshot.RenewalDate, account.RenewalDate) {
@@ -339,7 +345,7 @@ func (s *Store) FulfillPaymentOrder(ctx context.Context, orderID, userID int64) 
 	if !paidOrder {
 		return ErrQuoteChanged
 	}
-	if err = lockPaymentOwner(ctx, tx, userID); err != nil {
+	if err = lockPaymentOwner(ctx, tx, userID, true); err != nil {
 		return err
 	}
 	accounts, err := loadAccounts(ctx, tx, userID, 0)
@@ -400,6 +406,9 @@ func (s *Store) FulfillPaymentOrder(ctx context.Context, orderID, userID int64) 
 			VALUES($1,$2) ON CONFLICT(account_id) DO NOTHING`, account.AccountID, *snapshot.AnchorDate); err != nil {
 			return err
 		}
+	}
+	if err = replenishAccountPaymentBalance(ctx, tx, orderID, userID); err != nil {
+		return err
 	}
 	if _, err = tx.ExecContext(ctx, `UPDATE custom_account_payment_orders SET fulfilled_at=NOW() WHERE order_id=$1 AND user_id=$2`, orderID, userID); err != nil {
 		return err

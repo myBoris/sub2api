@@ -4,6 +4,8 @@ import { defineComponent } from 'vue'
 
 import AccountsView from '../AccountsView.vue'
 import AccountActionMenu from '@/components/admin/account/AccountActionMenu.vue'
+import AccountTableActions from '@/components/admin/account/AccountTableActions.vue'
+import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
 
 const {
   listAccounts,
@@ -105,7 +107,7 @@ const AccountStatsModalStub = defineComponent({
   template: '<div data-test="stats-account">{{ show ? account?.name : "" }}</div>'
 })
 
-function mountView(stubActionMenu = true, realUsageCell = false) {
+function mountView(stubActionMenu = true, realUsageCell = false, realTableActions = false) {
   return mount(AccountsView, {
     attachTo: document.body,
     global: {
@@ -113,7 +115,7 @@ function mountView(stubActionMenu = true, realUsageCell = false) {
         AppLayout: { template: '<div><slot /></div>' },
         TablePageLayout: { template: '<div><slot name="filters" /><slot name="table" /><slot name="pagination" /></div>' },
         DataTable: DataTableStub,
-        AccountTableActions: { template: `<div><button data-test="manual-refresh" @click="$emit('refresh')">refresh</button><slot name="after" /></div>` },
+        AccountTableActions: realTableActions ? false : { template: `<div><button data-test="manual-refresh" @click="$emit('refresh')">refresh</button><slot name="after" /></div>` },
         AccountTableFilters: true,
         AccountBulkActionsBar: true,
         Pagination: true,
@@ -341,6 +343,7 @@ describe('admin AccountsView lite account list', () => {
   })
 
   it('loads the full account by id before opening edit, test, and stats actions', async () => {
+    authState.isAdmin = true
     const wrapper = mountView()
     await flushPromises()
 
@@ -383,6 +386,7 @@ describe('admin AccountsView lite account list', () => {
   })
 
   it('shows an error and keeps the modal closed when detail loading fails', async () => {
+    authState.isAdmin = true
     const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {})
     getById.mockRejectedValueOnce(new Error('detail failed'))
     const wrapper = mountView()
@@ -395,6 +399,44 @@ describe('admin AccountsView lite account list', () => {
     expect(showError).toHaveBeenCalledWith('detail failed')
     expect(wrapper.get('[data-test="edit-account"]').text()).toBe('')
     consoleError.mockRestore()
+    wrapper.unmount()
+  })
+
+  it.each([false, true])('hides only the four account management controls from ordinary users in simple mode=%s', async simpleMode => {
+    authState.isSimpleMode = simpleMode
+    const wrapper = mountView(true, false, true)
+    await flushPromises()
+    const labels = wrapper.findAll('button').map(button => button.text())
+    for (const label of ['admin.accounts.moreActions', 'admin.accounts.createAccount', 'common.edit', 'common.delete']) {
+      expect(labels).not.toContain(label)
+    }
+    expect(labels).toContain('common.more')
+    expect(wrapper.find('[title="admin.accounts.autoRefresh"]').exists()).toBe(true)
+    expect(wrapper.find('create-account-modal-stub').exists()).toBe(false)
+    expect(wrapper.find('[data-test="edit-account"]').exists()).toBe(false)
+    expect(wrapper.findAllComponents(ConfirmDialog).some(dialog => dialog.props('title') === 'admin.accounts.deleteAccount')).toBe(false)
+
+    wrapper.getComponent(AccountTableActions).vm.$emit('create')
+    await flushPromises()
+    expect(wrapper.find('create-account-modal-stub').exists()).toBe(false)
+    expect(getById).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
+
+  it('retains the administrator management controls and opens their dialogs', async () => {
+    authState.isAdmin = true
+    const wrapper = mountView(true, false, true)
+    await flushPromises()
+    const button = (label: string) => wrapper.findAll('button').find(entry => entry.text() === label)!
+    expect(button('admin.accounts.moreActions')).toBeDefined()
+    await button('admin.accounts.createAccount').trigger('click')
+    expect(wrapper.get('create-account-modal-stub').attributes('show')).toBe('true')
+    await button('common.edit').trigger('click')
+    await flushPromises()
+    expect(getById).toHaveBeenCalledWith(42)
+    expect(wrapper.get('[data-test="edit-account"]').text()).toBe('compact row')
+    await button('common.delete').trigger('click')
+    expect(wrapper.findAllComponents(ConfirmDialog).find(dialog => dialog.props('title') === 'admin.accounts.deleteAccount')?.props('show')).toBe(true)
     wrapper.unmount()
   })
 })

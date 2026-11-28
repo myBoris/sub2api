@@ -46,13 +46,13 @@ func databaseError(err error) error {
 
 func (s *Store) Catalog(ctx context.Context) (Catalog, error) {
 	c := Catalog{Plans: []Plan{}, Payers: []Payer{}}
-	rows, err := s.db.QueryContext(ctx, `SELECT id,platform,name,price_cents FROM custom_billing_plans ORDER BY platform,name,id`)
+	rows, err := s.db.QueryContext(ctx, `SELECT id,platform,name,price_cents,cost_cents FROM custom_billing_plans ORDER BY platform,name,id`)
 	if err != nil {
 		return c, err
 	}
 	for rows.Next() {
 		var p Plan
-		if err = rows.Scan(&p.ID, &p.Platform, &p.Name, &p.Price); err != nil {
+		if err = rows.Scan(&p.ID, &p.Platform, &p.Name, &p.Price, &p.Cost); err != nil {
 			_ = rows.Close()
 			return c, err
 		}
@@ -78,17 +78,21 @@ func (s *Store) Catalog(ctx context.Context) (Catalog, error) {
 	return c, rows.Err()
 }
 
-func (s *Store) SavePlan(ctx context.Context, id int64, p Plan) (Plan, error) {
+func (s *Store) SavePlan(ctx context.Context, id int64, p Plan, costProvided ...bool) (Plan, error) {
 	p.Platform = strings.TrimSpace(p.Platform)
 	p.Name = strings.TrimSpace(p.Name)
-	if !validName(p.Platform) || !validName(p.Name) || p.Price < 0 || p.Price > 999999999999 {
+	if !validName(p.Platform) || !validName(p.Name) || p.Price < 0 || p.Price > 999999999999 || p.Cost < 0 || p.Cost > 999999999999 {
 		return p, ErrInvalid
 	}
 	var err error
 	if id == 0 {
-		err = s.db.QueryRowContext(ctx, `INSERT INTO custom_billing_plans(platform,name,price_cents) VALUES($1,$2,$3) RETURNING id`, p.Platform, p.Name, p.Price).Scan(&p.ID)
+		err = s.db.QueryRowContext(ctx, `INSERT INTO custom_billing_plans(platform,name,price_cents,cost_cents) VALUES($1,$2,$3,$4) RETURNING id`, p.Platform, p.Name, p.Price, p.Cost).Scan(&p.ID)
 	} else {
-		err = s.db.QueryRowContext(ctx, `UPDATE custom_billing_plans SET platform=$1,name=$2,price_cents=$3 WHERE id=$4 RETURNING id`, p.Platform, p.Name, p.Price, id).Scan(&p.ID)
+		var cost any = p.Cost
+		if len(costProvided) > 0 && !costProvided[0] {
+			cost = nil
+		}
+		err = s.db.QueryRowContext(ctx, `UPDATE custom_billing_plans SET platform=$1,name=$2,price_cents=$3,cost_cents=COALESCE($4,cost_cents) WHERE id=$5 RETURNING id,cost_cents`, p.Platform, p.Name, p.Price, cost, id).Scan(&p.ID, &p.Cost)
 	}
 	return p, databaseError(err)
 }
@@ -147,7 +151,7 @@ func (s *Store) SyncAccounts(ctx context.Context) (int64, error) {
 
 func loadAccounts(ctx context.Context, tx *sql.Tx, userID, accountID int64) ([]Account, error) {
 	query := `SELECT b.account_id,a.name,COALESCE(p.platform,a.platform),b.renewal_date,
-		b.plan_id,COALESCE(p.name,''),b.price_cents,b.payer_id,COALESCE(y.name,''),b.history,b.created_at
+		b.plan_id,COALESCE(p.name,''),b.price_cents,b.payer_id,COALESCE(y.name,''),b.history,b.created_at,b.cost_cents
 		FROM custom_account_billing b JOIN accounts a ON a.id=b.account_id
 		LEFT JOIN custom_billing_plans p ON p.id=b.plan_id
 		LEFT JOIN custom_billing_payers y ON y.id=b.payer_id
@@ -172,7 +176,7 @@ func loadAccounts(ctx context.Context, tx *sql.Tx, userID, accountID int64) ([]A
 		var a Account
 		var date sql.NullTime
 		var raw []byte
-		if err = rows.Scan(&a.AccountID, &a.AccountName, &a.Platform, &date, &a.PlanID, &a.PlanName, &a.Price, &a.PayerID, &a.PayerName, &raw, &a.createdAt); err != nil {
+		if err = rows.Scan(&a.AccountID, &a.AccountName, &a.Platform, &date, &a.PlanID, &a.PlanName, &a.Price, &a.PayerID, &a.PayerName, &raw, &a.createdAt, &a.Cost); err != nil {
 			return nil, err
 		}
 		if date.Valid {
@@ -283,8 +287,12 @@ func (s *Store) UpdateAccount(ctx context.Context, id int64, u AccountUpdate) (A
 	fillHistory(&a, now)
 	// Validate references before writing, including friendly errors for stale forms.
 	if u.PlanID != nil {
-		if err = tx.QueryRowContext(ctx, `SELECT platform,name FROM custom_billing_plans WHERE id=$1`, *u.PlanID).Scan(&a.Platform, &a.PlanName); err != nil {
+		var planCost Money
+		if err = tx.QueryRowContext(ctx, `SELECT platform,name,cost_cents FROM custom_billing_plans WHERE id=$1`, *u.PlanID).Scan(&a.Platform, &a.PlanName, &planCost); err != nil {
 			return a, databaseError(err)
+		}
+		if u.Cost == nil && (a.PlanID == nil || *a.PlanID != *u.PlanID) {
+			a.Cost = planCost
 		}
 	} else {
 		a.PlanName = ""
@@ -300,6 +308,9 @@ func (s *Store) UpdateAccount(ctx context.Context, id int64, u AccountUpdate) (A
 	}
 	a.PlanID = u.PlanID
 	a.Price = u.Price
+	if u.Cost != nil {
+		a.Cost = *u.Cost
+	}
 	a.PayerID = u.PayerID
 	accessChanged := accessDateExplicitlyChanged(u, beforeRollover, a.RenewalDate)
 	// A form can remain open while the background scheduler rolls the stored
@@ -311,12 +322,12 @@ func (s *Store) UpdateAccount(ctx context.Context, id int64, u AccountUpdate) (A
 		}
 	}
 	a.PaymentStatus = u.PaymentStatus
-	setHistory(&a, History{Month: now.Format("2006-01"), Status: u.PaymentStatus, Amount: u.Price, PayerID: u.PayerID, PayerName: a.PayerName})
+	setHistory(&a, History{Month: now.Format("2006-01"), Status: u.PaymentStatus, Amount: u.Price, Cost: a.Cost, PayerID: u.PayerID, PayerName: a.PayerName})
 	raw, err := historyJSON(a.History)
 	if err != nil {
 		return a, err
 	}
-	_, err = tx.ExecContext(ctx, `UPDATE custom_account_billing SET renewal_date=$1,plan_id=$2,price_cents=$3,payer_id=$4,history=$5::jsonb,updated_at=NOW() WHERE account_id=$6`, a.RenewalDate, u.PlanID, u.Price, u.PayerID, string(raw), id)
+	_, err = tx.ExecContext(ctx, `UPDATE custom_account_billing SET renewal_date=$1,plan_id=$2,price_cents=$3,payer_id=$4,history=$5::jsonb,cost_cents=$6,updated_at=NOW() WHERE account_id=$7`, a.RenewalDate, u.PlanID, u.Price, u.PayerID, string(raw), a.Cost, id)
 	if err != nil {
 		return a, databaseError(err)
 	}
@@ -333,9 +344,15 @@ func (s *Store) UpdateAccount(ctx context.Context, id int64, u AccountUpdate) (A
 	return a, tx.Commit()
 }
 
-func (s *Store) UpdateHistory(ctx context.Context, id int64, entry History) (Account, error) {
+// UpdateHistory keeps the existing cost when an older client omits it. Callers
+// can provide an explicit cost, including zero, to revise the monthly snapshot.
+func (s *Store) UpdateHistory(ctx context.Context, id int64, entry History, cost ...*Money) (Account, error) {
 	now := s.Now()
-	if !ValidMonth(entry.Month) || entry.Month > now.Format("2006-01") || !validStatus(entry.Status) || entry.Amount < 0 || entry.Amount > 999999999999 {
+	var providedCost *Money
+	if len(cost) > 0 {
+		providedCost = cost[0]
+	}
+	if !ValidMonth(entry.Month) || entry.Month > now.Format("2006-01") || !validStatus(entry.Status) || entry.Amount < 0 || entry.Amount > 999999999999 || (providedCost != nil && (*providedCost < 0 || *providedCost > 999999999999)) {
 		return Account{}, ErrInvalid
 	}
 	tx, err := s.db.BeginTx(ctx, nil)
@@ -356,16 +373,22 @@ func (s *Store) UpdateHistory(ctx context.Context, id int64, entry History) (Acc
 	a := accounts[0]
 	fillHistory(&a, now)
 	if old, ok := historyFor(a, entry.Month); ok {
+		entry.Cost = old.Cost
 		entry.PayerID = old.PayerID
 		entry.PayerName = old.PayerName
 	} else {
+		entry.Cost = a.Cost
 		entry.PayerID = a.PayerID
 		entry.PayerName = a.PayerName
+	}
+	if providedCost != nil {
+		entry.Cost = *providedCost
 	}
 	setHistory(&a, entry)
 	if entry.Month == now.Format("2006-01") {
 		a.Price = entry.Amount
-		if _, err = tx.ExecContext(ctx, `UPDATE custom_account_billing SET price_cents=$1 WHERE account_id=$2`, entry.Amount, id); err != nil {
+		a.Cost = entry.Cost
+		if _, err = tx.ExecContext(ctx, `UPDATE custom_account_billing SET price_cents=$1,cost_cents=$2 WHERE account_id=$3`, entry.Amount, entry.Cost, id); err != nil {
 			return a, err
 		}
 	}

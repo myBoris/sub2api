@@ -3,6 +3,7 @@ package handler
 import (
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -110,8 +111,8 @@ func TestAccountBillingSummaryUsesSubjectOwnershipAndOmitsCollectionAndAccountDe
 	mock.ExpectQuery(`SELECT EXISTS\(SELECT 1 FROM users WHERE id=\$1 AND deleted_at IS NULL AND status='active' AND role='user'\)`).
 		WithArgs(int64(7)).WillReturnRows(sqlmock.NewRows([]string{"exists"}).AddRow(true))
 	mock.ExpectQuery(`(?s)SELECT b.account_id.*WHERE a.deleted_at IS NULL AND EXISTS\(SELECT 1 FROM custom_user_accounts o WHERE o.account_id=b.account_id AND o.user_id=\$1\).*FOR UPDATE OF b`).
-		WithArgs(int64(7)).WillReturnRows(sqlmock.NewRows([]string{"account_id", "name", "platform", "renewal_date", "plan_id", "plan_name", "price_cents", "payer_id", "payer_name", "history", "created_at"}).
-		AddRow(11, "Private account name", "openai", nil, nil, "Private plan", 123, nil, "Private payer", `[{"month":"`+month+`","status":"unpaid","amount":1.23}]`, now))
+		WithArgs(int64(7)).WillReturnRows(sqlmock.NewRows([]string{"account_id", "name", "platform", "renewal_date", "plan_id", "plan_name", "price_cents", "payer_id", "payer_name", "history", "created_at", "cost_cents"}).
+		AddRow(11, "Private account name", "openai", nil, nil, "Private plan", 123, nil, "Private payer", `[{"month":"`+month+`","status":"unpaid","amount":1.23,"cost":65.00}]`, now, 6500))
 	mock.ExpectQuery(`(?s)SELECT account_id,valid_through FROM custom_account_billing_access.*WHERE account_id=ANY\(\$1\) ORDER BY account_id`).
 		WithArgs("{11}").WillReturnRows(sqlmock.NewRows([]string{"account_id", "valid_through"}).AddRow(11, nil))
 	mock.ExpectCommit()
@@ -128,6 +129,32 @@ func TestAccountBillingSummaryUsesSubjectOwnershipAndOmitsCollectionAndAccountDe
 	require.Equal(t, http.StatusOK, recorder.Code, recorder.Body.String())
 	require.JSONEq(t, `{"code":0,"message":"success","data":{"month":"`+month+`","amount_due":1.23,"total_amount":1.23,"accounts":[{"account_id":11,"renewal_date":null,"price":1.23,"payment_status":"unpaid","valid_through":null,"expired":false}]}}`, recorder.Body.String())
 	require.NoError(t, mock.ExpectationsWereMet(), "no allowlist or image settings may be read")
+}
+
+func TestAccountBillingRejectsInvalidCostsBeforeDatabaseAccess(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	h := &AccountBillingHandler{}
+	for _, endpoint := range []struct {
+		path    string
+		handler gin.HandlerFunc
+	}{
+		{path: "/plans", handler: h.SavePlan},
+		{path: "/accounts/:id", handler: h.Update},
+		{path: "/history/:id/:month", handler: h.UpdateHistory},
+	} {
+		for _, cost := range []string{"-0.01", "0.001", "10000000000", `"12.00"`} {
+			t.Run(endpoint.path+"/"+cost, func(t *testing.T) {
+				router := gin.New()
+				router.POST(endpoint.path, endpoint.handler)
+				path := strings.ReplaceAll(strings.ReplaceAll(endpoint.path, ":id", "11"), ":month", "2026-11")
+				request := httptest.NewRequest(http.MethodPost, path, strings.NewReader(`{"platform":"openai","name":"Plan","price":12,"amount":12,"status":"paid","payment_status":"paid","cost":`+cost+`}`))
+				request.Header.Set("Content-Type", "application/json")
+				recorder := httptest.NewRecorder()
+				router.ServeHTTP(recorder, request)
+				require.Equal(t, http.StatusBadRequest, recorder.Code, recorder.Body.String())
+			})
+		}
+	}
 }
 
 func TestAccountBillingSummaryRejectsUserDeactivatedSinceAuthentication(t *testing.T) {

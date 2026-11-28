@@ -116,24 +116,24 @@ func TestApplyingHistoryKeepsHistoricalPayerNamesAndReflectsCurrentRenames(t *te
 func TestSummaryCountsThreeDaysAcrossMonthEndAndRetainsZeroPayers(t *testing.T) {
 	now := time.Date(2026, 11, 30, 23, 59, 0, 0, time.FixedZone("test", 9*60*60))
 	accounts := []Account{
-		{PaymentStatus: "paid", Price: 10, PayerID: billingTestInt(1), RenewalDate: billingTestDate("2026-11-30")},
-		{PaymentStatus: "unpaid", Price: 20, PayerID: billingTestInt(1), RenewalDate: billingTestDate("2026-12-03")},
-		{PaymentStatus: "unpaid", Price: 99, PayerID: billingTestInt(1), RenewalDate: billingTestDate("2026-12-04")},
-		{PaymentStatus: "paid", Price: 50, RenewalDate: billingTestDate("2026-11-29")},
-		{PaymentStatus: "unpaid", Price: 70, RenewalDate: nil},
-		{PaymentStatus: "unpaid", Price: 5, PayerID: billingTestInt(9), PayerName: "Historical payer", RenewalDate: billingTestDate("2026-12-01")},
+		{PaymentStatus: "paid", Price: 10, Cost: 3, PayerID: billingTestInt(1), RenewalDate: billingTestDate("2026-11-30")},
+		{PaymentStatus: "unpaid", Price: 20, Cost: 7, PayerID: billingTestInt(1), RenewalDate: billingTestDate("2026-12-03")},
+		{PaymentStatus: "unpaid", Price: 99, Cost: 51, PayerID: billingTestInt(1), RenewalDate: billingTestDate("2026-12-04")},
+		{PaymentStatus: "paid", Price: 50, Cost: 17, RenewalDate: billingTestDate("2026-11-29")},
+		{PaymentStatus: "unpaid", Price: 70, Cost: 23, RenewalDate: nil},
+		{PaymentStatus: "unpaid", Price: 5, Cost: 2, PayerID: billingTestInt(9), PayerName: "Historical payer", RenewalDate: billingTestDate("2026-12-01")},
 	}
 	summary := summarize(accounts, now, []Payer{{ID: 1, Name: "Assigned"}, {ID: 2, Name: "No accounts"}})
 	require.Equal(t, 2, summary.PaidCount)
 	require.Equal(t, 4, summary.UnpaidCount)
 	require.Equal(t, 3, summary.DueSoonCount)
 	require.Len(t, summary.Payers, 4)
-	require.Equal(t, Money(129), summary.Payers[0].Total)
+	require.Equal(t, Money(61), summary.Payers[0].Total)
 	require.EqualValues(t, 1, *summary.Payers[0].PayerID)
 	require.Equal(t, Money(0), summary.Payers[1].Total)
 	require.EqualValues(t, 2, *summary.Payers[1].PayerID)
 	require.Nil(t, summary.Payers[2].PayerID)
-	require.Equal(t, Money(120), summary.Payers[2].Total)
+	require.Equal(t, Money(40), summary.Payers[2].Total)
 	require.EqualValues(t, 9, *summary.Payers[3].PayerID)
 	require.Equal(t, "Historical payer", summary.Payers[3].PayerName)
 }
@@ -154,6 +154,8 @@ func TestValidateUpdateCalendarAndReferences(t *testing.T) {
 	for _, update := range []AccountUpdate{
 		{PaymentStatus: "paid", Price: -1},
 		{PaymentStatus: "paid", Price: 1000000000000},
+		{PaymentStatus: "paid", Cost: costValue(-1)},
+		{PaymentStatus: "paid", Cost: costValue(1000000000000)},
 		{PaymentStatus: "pending", Price: 100},
 		{PaymentStatus: "paid", PlanID: billingTestInt(0)},
 		{PaymentStatus: "paid", PayerID: billingTestInt(-1)},

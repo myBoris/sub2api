@@ -26,7 +26,7 @@ describe('user resource management routes', () => {
 
   it('retains the administrator requirement on the original management routes', async () => {
     const { default: router } = await import('@/router')
-    for (const path of ['/admin/groups', '/admin/accounts']) {
+    for (const path of ['/admin/groups', '/admin/accounts', '/admin/billing/subscription-requests']) {
       expect(router.getRoutes().find(route => route.path === path)?.meta.requiresAdmin).toBe(true)
     }
   })

@@ -69,6 +69,23 @@ describe('AccountActionMenu — spark shadow 按钮可见性', () => {
     wrapper.unmount()
   })
 
+  it('隐藏复制入口时保留测试连接和查看统计操作', async () => {
+    const account = makeAccount({ platform: 'anthropic', type: 'apikey', parent_account_id: null })
+    const wrapper = mount(AccountActionMenu, {
+      props: { show: true, account, anchorRect, showDuplicate: false },
+      attachTo: document.body,
+    })
+    expect(getBodyText()).not.toContain('admin.accounts.duplicateAccount')
+    const buttons = getBodyButtons()
+    buttons.find(button => button.textContent?.includes('admin.accounts.testConnection'))!.click()
+    buttons.find(button => button.textContent?.includes('admin.accounts.viewStats'))!.click()
+    await wrapper.vm.$nextTick()
+    expect(wrapper.emitted('test')).toEqual([[account]])
+    expect(wrapper.emitted('stats')).toEqual([[account]])
+    expect(wrapper.emitted('duplicate')).toBeUndefined()
+    wrapper.unmount()
+  })
+
   it.each(['oauth', 'setup-token'] as const)('%s 账号隐藏「复制账号」按钮，避免共享可轮换令牌', (type) => {
     const account = makeAccount({ platform: 'openai', type, parent_account_id: null })
     const wrapper = mount(AccountActionMenu, {

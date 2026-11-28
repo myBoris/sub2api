@@ -25,7 +25,7 @@ var (
 type Money int64
 
 func (m Money) MarshalJSON() ([]byte, error) {
-	return []byte(fmt.Sprintf("%d.%02d", int64(m)/100, int64(m)%100)), nil
+	return []byte(decimal.NewFromInt(int64(m)).Shift(-2).StringFixed(2)), nil
 }
 
 func (m *Money) UnmarshalJSON(raw []byte) error {
@@ -49,6 +49,7 @@ type Plan struct {
 	Platform string `json:"platform"`
 	Name     string `json:"name"`
 	Price    Money  `json:"price"`
+	Cost     Money  `json:"cost"`
 }
 
 type Payer struct {
@@ -65,6 +66,7 @@ type History struct {
 	Month     string `json:"month"`
 	Status    string `json:"status"`
 	Amount    Money  `json:"amount"`
+	Cost      Money  `json:"cost"`
 	PayerID   *int64 `json:"payer_id,omitempty"`
 	PayerName string `json:"payer_name,omitempty"`
 }
@@ -78,6 +80,7 @@ type Account struct {
 	PlanID        *int64    `json:"plan_id"`
 	PlanName      string    `json:"plan_name"`
 	Price         Money     `json:"price"`
+	Cost          Money     `json:"cost"`
 	PayerID       *int64    `json:"payer_id"`
 	PayerName     string    `json:"payer_name"`
 	PaymentStatus string    `json:"payment_status"`
@@ -93,6 +96,7 @@ type AccountUpdate struct {
 	RenewalDateChanged *bool  `json:"renewal_date_changed,omitempty"`
 	PlanID             *int64 `json:"plan_id"`
 	Price              Money  `json:"price"`
+	Cost               *Money `json:"cost,omitempty"`
 	PayerID            *int64 `json:"payer_id"`
 	PaymentStatus      string `json:"payment_status"`
 }
@@ -104,10 +108,13 @@ type PayerTotal struct {
 }
 
 type Summary struct {
-	PaidCount    int          `json:"paid_count"`
-	UnpaidCount  int          `json:"unpaid_count"`
-	DueSoonCount int          `json:"due_soon_count"`
-	Payers       []PayerTotal `json:"payers"`
+	PaidCount       int          `json:"paid_count"`
+	UnpaidCount     int          `json:"unpaid_count"`
+	DueSoonCount    int          `json:"due_soon_count"`
+	PaidTotalAmount Money        `json:"paid_total_amount"`
+	PaidTotalCost   Money        `json:"paid_total_cost"`
+	PaidProfit      Money        `json:"paid_profit"`
+	Payers          []PayerTotal `json:"payers"`
 }
 
 type AccountList struct {
@@ -141,7 +148,7 @@ func ValidMonth(month string) bool {
 func validStatus(status string) bool { return status == "paid" || status == "unpaid" }
 
 func ValidateUpdate(u AccountUpdate) error {
-	if !validStatus(u.PaymentStatus) || u.Price < 0 || u.Price > 999999999999 || (u.PlanID != nil && *u.PlanID <= 0) || (u.PayerID != nil && *u.PayerID <= 0) {
+	if !validStatus(u.PaymentStatus) || u.Price < 0 || u.Price > 999999999999 || (u.Cost != nil && (*u.Cost < 0 || *u.Cost > 999999999999)) || (u.PlanID != nil && *u.PlanID <= 0) || (u.PayerID != nil && *u.PayerID <= 0) {
 		return fmt.Errorf("%w: invalid payment status, amount, plan or payer", ErrInvalid)
 	}
 	if u.RenewalDate != nil {
@@ -169,7 +176,7 @@ func fillHistory(a *Account, now time.Time) bool {
 	for !month.After(last) {
 		key := month.Format("2006-01")
 		if !existing[key] {
-			a.History = append(a.History, History{Month: key, Status: "unpaid", Amount: a.Price, PayerID: a.PayerID, PayerName: a.PayerName})
+			a.History = append(a.History, History{Month: key, Status: "unpaid", Amount: a.Price, Cost: a.Cost, PayerID: a.PayerID, PayerName: a.PayerName})
 			changed = true
 		}
 		month = month.AddDate(0, 1, 0)
@@ -195,6 +202,7 @@ func applyHistory(a *Account, entry History, current bool) {
 		name = a.PayerName
 	}
 	a.Price = entry.Amount
+	a.Cost = entry.Cost
 	a.PaymentStatus = entry.Status
 	a.PayerID = entry.PayerID
 	a.PayerName = name
@@ -224,6 +232,8 @@ func summarize(accounts []Account, now time.Time, payers []Payer) Summary {
 	for _, a := range accounts {
 		if a.PaymentStatus == "paid" {
 			s.PaidCount++
+			s.PaidTotalAmount += a.Price
+			s.PaidTotalCost += a.Cost
 		} else {
 			s.UnpaidCount++
 		}
@@ -234,8 +244,9 @@ func summarize(accounts []Account, now time.Time, payers []Payer) Summary {
 		if a.PayerID != nil {
 			id = *a.PayerID
 		}
-		totals[id] += a.Price
+		totals[id] += a.Cost
 	}
+	s.PaidProfit = s.PaidTotalAmount - s.PaidTotalCost
 	for _, payer := range payers {
 		id := payer.ID
 		s.Payers = append(s.Payers, PayerTotal{PayerID: &id, PayerName: payer.Name, Total: totals[id]})

@@ -216,7 +216,7 @@ function refreshUserBalanceForSuccessfulOrder(nextOrder: ResolvedOrder | null): 
   if (!nextOrder || userBalanceRefreshStarted || normalizeOrderStatus(nextOrder.status) !== 'COMPLETED') {
     return
   }
-  if ('order_type' in nextOrder && nextOrder.order_type !== 'balance') {
+  if ('order_type' in nextOrder && nextOrder.order_type !== 'balance' && nextOrder.order_type !== 'account') {
     return
   }
 
@@ -258,6 +258,13 @@ function isSuccessStatus(status: string | null | undefined): boolean {
 
 function isPendingStatus(status: string | null | undefined): boolean {
   return PENDING_STATUSES.has(normalizeOrderStatus(status))
+}
+
+function needsOrderStatusRefresh(nextOrder: ResolvedOrder | null): boolean {
+  if (isPendingStatus(nextOrder?.status)) return true
+  if (!nextOrder || !('order_type' in nextOrder) || nextOrder.order_type !== 'account') return false
+  const status = normalizeOrderStatus(nextOrder.status)
+  return status === 'PAID' || status === 'RECHARGING'
 }
 
 function readRouteQueryString(key: string): string {
@@ -352,7 +359,7 @@ function clearRecoverySnapshotForTerminalStatus(status: string | null | undefine
 
 function scheduleStatusRefresh(refreshOrder: (() => Promise<ResolvedOrder | null>) | null): void {
   clearStatusRefreshTimer()
-  if (!refreshOrder || !isPending.value || refreshAttempts.value >= STATUS_REFRESH_MAX_ATTEMPTS) {
+  if (!refreshOrder || !needsOrderStatusRefresh(order.value) || refreshAttempts.value >= STATUS_REFRESH_MAX_ATTEMPTS) {
     return
   }
 
@@ -364,7 +371,7 @@ function scheduleStatusRefresh(refreshOrder: (() => Promise<ResolvedOrder | null
       clearRecoverySnapshotForTerminalStatus(refreshedOrder.status)
     }
 
-    if (isPendingStatus(order.value?.status)) {
+    if (needsOrderStatusRefresh(order.value)) {
       scheduleStatusRefresh(refreshOrder)
     }
   }, STATUS_REFRESH_INTERVAL_MS)
@@ -462,7 +469,7 @@ onMounted(async () => {
     return null
   }
 
-  if (isPendingStatus(order.value?.status)) {
+  if (needsOrderStatusRefresh(order.value)) {
     scheduleStatusRefresh(refreshOrder)
   } else if (order.value) {
     clearRecoverySnapshotForTerminalStatus(order.value.status)

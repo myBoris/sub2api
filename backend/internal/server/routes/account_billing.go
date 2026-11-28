@@ -22,6 +22,8 @@ func registerAccountBillingAdminRoutes(admin *gin.RouterGroup, h *handler.Handle
 	billing.POST("/accounts/sync", h.AccountBilling.Sync)
 	billing.PUT("/accounts/:id", h.AccountBilling.Update)
 	billing.PUT("/accounts/:id/history/:month", h.AccountBilling.UpdateHistory)
+	billing.GET("/subscription-requests", h.AccountBilling.AdminSubscriptionRequests)
+	billing.POST("/subscription-requests/:id/complete", h.AccountBilling.CompleteSubscriptionRequest)
 }
 
 func registerAccountBillingUserRoutes(authenticated *gin.RouterGroup, h *handler.Handlers) {
@@ -29,4 +31,8 @@ func registerAccountBillingUserRoutes(authenticated *gin.RouterGroup, h *handler
 		return
 	}
 	authenticated.GET("/account-billing/summary", h.AccountBilling.UserSummary)
+	authenticated.GET("/account-billing/subscription-plans", h.AccountBilling.SubscriptionPlans)
+	authenticated.GET("/account-billing/subscription-requests", h.AccountBilling.UserSubscriptionRequests)
+	authenticated.POST("/account-billing/subscription-requests", h.AccountBilling.CreateSubscriptionRequest)
+	authenticated.PUT("/account-billing/subscription-requests/:id", h.AccountBilling.UpdateSubscriptionRequest)
 }

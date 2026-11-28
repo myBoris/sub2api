@@ -24,20 +24,24 @@ func paymentTestAccount(id int64, amount Money, status string) Account {
 }
 
 func paymentTestRows(accounts ...Account) *sqlmock.Rows {
-	rows := sqlmock.NewRows([]string{"account_id", "name", "platform", "renewal_date", "plan_id", "plan_name", "price_cents", "payer_id", "payer_name", "history", "created_at"})
+	rows := sqlmock.NewRows([]string{"account_id", "name", "platform", "renewal_date", "plan_id", "plan_name", "price_cents", "payer_id", "payer_name", "history", "created_at", "cost_cents"})
 	for _, a := range accounts {
 		var date any
 		if a.RenewalDate != nil {
 			date, _ = time.Parse("2006-01-02", *a.RenewalDate)
 		}
 		raw, _ := json.Marshal(a.History)
-		rows.AddRow(a.AccountID, a.AccountName, "openai", date, nil, "", int64(a.Price), nil, "", string(raw), a.createdAt)
+		rows.AddRow(a.AccountID, a.AccountName, "openai", date, nil, "", int64(a.Price), nil, "", string(raw), a.createdAt, int64(a.Cost))
 	}
 	return rows
 }
 
-func expectPaymentOwner(mock sqlmock.Sqlmock) {
-	mock.ExpectQuery(`SELECT id FROM users WHERE id=\$1 AND deleted_at IS NULL AND status='active' FOR SHARE`).
+func expectPaymentOwner(mock sqlmock.Sqlmock, replenish ...bool) {
+	lock := "FOR SHARE"
+	if len(replenish) > 0 && replenish[0] {
+		lock = "FOR NO KEY UPDATE"
+	}
+	mock.ExpectQuery(`SELECT id FROM users WHERE id=\$1 AND deleted_at IS NULL AND status='active' ` + lock).
 		WithArgs(int64(7)).WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow(7))
 	mock.ExpectQuery(`SELECT account_id FROM custom_user_accounts WHERE user_id=\$1 ORDER BY account_id FOR SHARE`).
 		WithArgs(int64(7)).WillReturnRows(sqlmock.NewRows([]string{"account_id"}).AddRow(11))
@@ -277,7 +281,7 @@ func TestFulfillAccountPaymentIsAtomicUsesSnapshotMonthAndDoesNotRepeatRenewal(t
 				require.NoError(t, mock.ExpectationsWereMet())
 				return
 			}
-			expectPaymentOwner(mock)
+			expectPaymentOwner(mock, true)
 			account.RenewalDate = paymentDate("2026-12-30")
 			account.History = append(account.History, History{Month: "2026-12", Amount: 1000, Status: "unpaid"})
 			if scenario == "price_changed" {
@@ -309,6 +313,8 @@ func TestFulfillAccountPaymentIsAtomicUsesSnapshotMonthAndDoesNotRepeatRenewal(t
 						WithArgs(int64(11), "2026-12-30").WillReturnResult(sqlmock.NewResult(0, 1))
 					mock.ExpectExec(`(?s)INSERT INTO custom_billing_renewal_schedule.*ON CONFLICT\(account_id\) DO NOTHING`).
 						WithArgs(int64(11), "2026-01-30").WillReturnResult(sqlmock.NewResult(0, 0))
+					mock.ExpectQuery(`(?s)WITH current_balance AS.*UPDATE users AS u SET balance=\$2.*RETURNING \(\$2-current_balance.balance\)::text`).
+						WithArgs(int64(7), accountPaymentBalanceTarget).WillReturnRows(sqlmock.NewRows([]string{"credited"}))
 					mock.ExpectExec(`UPDATE custom_account_payment_orders SET fulfilled_at=NOW\(\) WHERE order_id=\$1 AND user_id=\$2`).
 						WithArgs(int64(99), int64(7)).WillReturnResult(sqlmock.NewResult(0, 1))
 					mock.ExpectCommit()

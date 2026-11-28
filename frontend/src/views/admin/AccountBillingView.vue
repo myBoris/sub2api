@@ -1,11 +1,11 @@
 <template>
   <AppLayout>
-    <div class="space-y-6">
+    <div class="space-y-4">
       <div class="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 class="text-xl font-semibold">账号支付状态</h1>
           <p class="mt-1 text-sm text-gray-500">
-            {{ data?.month || '本月' }} · 按月记录收款，跨月自动按未支付统计。
+            {{ data?.month || '本月' }}
           </p>
         </div>
         <div class="flex gap-2">
@@ -16,16 +16,10 @@
             :disabled="syncing || loading"
             @click="sync"
           >
-            {{ syncing ? '同步中…' : '同步账号管理中的所有账号' }}
+            {{ syncing ? '同步中…' : '同步账号' }}
           </button>
         </div>
       </div>
-      <p class="text-sm text-gray-500">
-        同步仅添加尚未登记的账号；已设置的套餐、售价、代付者和支付记录会保留。新账号请编辑并选择套餐。
-      </p>
-      <p class="text-sm text-gray-500">
-        API 按实际有效截止日期判断，到期当天仍可使用，次日起仅停止已到期账号；其他未到期账号不受影响。支付续费后按更新后的实际有效期恢复。续费时间按月展示，自动顺延不会延长 API 有效期。
-      </p>
       <div
         v-if="error"
         role="alert"
@@ -33,50 +27,74 @@
       >
         {{ error }}
       </div>
-      <template v-if="data">
-        <div class="grid gap-4 sm:grid-cols-3">
-          <div class="card p-5">
-            <p class="text-sm text-gray-500">当月已支付账号</p>
-            <p class="mt-2 text-3xl font-semibold text-emerald-600">
-              {{ data.summary.paid_count }}
-            </p>
-          </div>
-          <div class="card p-5">
-            <p class="text-sm text-gray-500">当月未支付账号</p>
-            <p class="mt-2 text-3xl font-semibold text-amber-600">
-              {{ data.summary.unpaid_count }}
-            </p>
-          </div>
-          <div class="card p-5">
-            <p class="text-sm text-gray-500">未来 3 天内到期（含今天）</p>
-            <p class="mt-2 text-3xl font-semibold text-primary-600">
-              {{ data.summary.due_soon_count }}
-            </p>
-          </div>
+      <section v-if="data" class="card overflow-hidden" aria-label="当月账单统计">
+        <div class="grid grid-cols-2 gap-x-4 gap-y-3 p-4 sm:grid-cols-3 xl:grid-cols-6">
+          <dl class="contents" data-testid="paid-summary">
+            <div>
+              <dt class="text-xs text-gray-500">已支付账号</dt>
+              <dd class="mt-1 text-lg font-semibold tabular-nums text-emerald-600">
+                {{ data.summary.paid_count }}
+              </dd>
+            </div>
+            <div>
+              <dt class="text-xs text-gray-500">总金额</dt>
+              <dd class="mt-1 break-all text-lg font-semibold tabular-nums">
+                ¥{{ money(data.summary.paid_total_amount) }}
+              </dd>
+            </div>
+            <div>
+              <dt class="text-xs text-gray-500">总成本</dt>
+              <dd class="mt-1 break-all text-lg font-semibold tabular-nums">
+                ¥{{ money(data.summary.paid_total_cost) }}
+              </dd>
+            </div>
+            <div>
+              <dt class="text-xs text-gray-500">利润</dt>
+              <dd
+                class="mt-1 break-all text-lg font-semibold tabular-nums"
+                :class="data.summary.paid_profit < 0 ? 'text-red-600 dark:text-red-400' : 'text-emerald-600'"
+              >
+                ¥{{ money(data.summary.paid_profit) }}
+              </dd>
+            </div>
+          </dl>
+          <dl class="contents">
+            <div>
+              <dt class="text-xs text-gray-500">未支付账号</dt>
+              <dd class="mt-1 text-lg font-semibold tabular-nums text-amber-600">
+                {{ data.summary.unpaid_count }}
+              </dd>
+            </div>
+            <div>
+              <dt class="text-xs text-gray-500">3 天内到期</dt>
+              <dd class="mt-1 text-lg font-semibold tabular-nums text-primary-600">
+                {{ data.summary.due_soon_count }}
+              </dd>
+            </div>
+          </dl>
         </div>
-        <section>
-          <h2 class="mb-3 font-semibold">
-            订阅代付者 · {{ data.month }} 售价合计
-          </h2>
-          <div class="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-            <div
+        <div class="flex items-start gap-3 border-t border-gray-100 px-4 py-2.5 dark:border-dark-700">
+          <h2 class="shrink-0 py-1 text-xs text-gray-500">代付成本</h2>
+          <div class="flex min-w-0 flex-wrap items-center gap-2">
+            <span
               v-for="payer in data.summary.payers"
               :key="payer.payer_id ?? 'none'"
-              class="card p-5"
+              class="inline-flex max-w-full items-center gap-2 rounded-md bg-gray-50 px-2.5 py-1 text-xs dark:bg-dark-900"
+              data-testid="payer-cost-summary"
             >
-              <p class="truncate text-sm text-gray-500">
+              <span class="max-w-32 truncate text-gray-500" :title="payer.payer_name || '未指定代付者'">
                 {{ payer.payer_name || '未指定代付者' }}
-              </p>
-              <p class="mt-2 text-2xl font-semibold">
+              </span>
+              <span class="whitespace-nowrap font-medium tabular-nums">
                 ¥{{ money(payer.total) }}
-              </p>
-            </div>
-            <p v-if="!data.summary.payers.length" class="text-sm text-gray-500">
+              </span>
+            </span>
+            <span v-if="!data.summary.payers.length" class="py-1 text-xs text-gray-500">
               暂无代付者统计
-            </p>
+            </span>
           </div>
-        </section>
-      </template>
+        </div>
+      </section>
       <section class="card overflow-hidden">
         <div class="flex flex-wrap gap-3 p-4">
           <input
@@ -121,6 +139,7 @@
                 <th>续费时间</th>
                 <th>AI 平台 / 套餐</th>
                 <th>售价（人民币）</th>
+                <th>成本（人民币）</th>
                 <th>订阅代付者</th>
                 <th>用户支付状态</th>
                 <th>操作</th>
@@ -129,7 +148,7 @@
             <tbody>
               <tr v-if="loading">
                 <td
-                  colspan="7"
+                  colspan="8"
                   class="py-10 text-center text-gray-500"
                   role="status"
                 >
@@ -163,6 +182,7 @@
                     {{ account.plan_name || '未选择套餐' }}
                   </td>
                   <td>¥{{ money(account.price) }}</td>
+                  <td>¥{{ money(account.cost) }}</td>
                   <td>{{ account.payer_name || '未指定' }}</td>
                   <td>
                     <span
@@ -193,7 +213,7 @@
                   </td>
                 </tr>
                 <tr v-if="!filteredAccounts.length">
-                  <td colspan="7" class="py-12 text-center text-gray-500">
+                  <td colspan="8" class="py-12 text-center text-gray-500">
                     {{
                       data?.items.length
                         ? '没有匹配的账号'
@@ -267,9 +287,19 @@
             required
             class="input mt-2"
           /><span class="mt-1 block text-xs text-gray-500"
-            >选择套餐会带入售价，可按账号调整。套餐价格后续变动不会覆盖本账号售价。</span
+            >选择套餐会带入售价和成本，可按账号调整。</span
           ></label
         >
+        <label class="block text-sm"
+          >成本（人民币）<input
+            v-model.number="form.cost"
+            type="number"
+            min="0"
+            max="99999999"
+            step="0.01"
+            required
+            class="input mt-2"
+        /></label>
         <label class="block text-sm"
           >订阅代付者<select v-model="form.payer_id" class="input mt-2">
             <option :value="null">未指定</option>
@@ -324,6 +354,7 @@
               <th>年月</th>
               <th>支付状态</th>
               <th>金额（人民币）</th>
+              <th>成本（人民币）</th>
               <th>操作</th>
             </tr>
           </thead>
@@ -332,6 +363,7 @@
               <td>{{ entry.month }}</td>
               <td>{{ entry.status === 'paid' ? '已支付' : '未支付' }}</td>
               <td>¥{{ money(entry.amount) }}</td>
+              <td>¥{{ money(entry.cost) }}</td>
               <td>
                 <button
                   class="text-primary-600"
@@ -342,7 +374,7 @@
               </td>
             </tr>
             <tr v-if="!sortedHistory.length">
-              <td colspan="4" class="py-8 text-center text-gray-500">
+              <td colspan="5" class="py-8 text-center text-gray-500">
                 暂无历史记录
               </td>
             </tr>
@@ -354,14 +386,15 @@
         @submit.prevent="saveHistory"
       >
         <h3 class="font-medium">补录 / 修订月度记录</h3>
-        <div class="grid gap-3 sm:grid-cols-3">
+        <div class="grid gap-3 sm:grid-cols-2">
           <label class="block text-sm"
             >年月<input
               v-model="historyForm.month"
               type="month"
               :max="data?.month"
               required
-              class="input mt-2" /></label
+              class="input mt-2"
+              @change="applyHistoryMonth" /></label
           ><label class="block text-sm"
             >状态<select v-model="historyForm.status" class="input mt-2">
               <option value="paid">已支付</option>
@@ -370,6 +403,16 @@
           ><label class="block text-sm"
             >金额<input
               v-model.number="historyForm.amount"
+              type="number"
+              min="0"
+              max="99999999"
+              step="0.01"
+              required
+              class="input mt-2"
+          /></label>
+          <label class="block text-sm"
+            >成本<input
+              v-model.number="historyForm.cost"
               type="number"
               min="0"
               max="99999999"
@@ -423,6 +466,7 @@ const form = reactive({
   renewal_date: '',
   plan_id: null as number | null,
   price: 0,
+  cost: 0,
   payer_id: null as number | null,
   payment_status: 'unpaid' as 'paid' | 'unpaid',
 })
@@ -430,6 +474,7 @@ const historyForm = reactive({
   month: '',
   status: 'paid' as 'paid' | 'unpaid',
   amount: 0,
+  cost: 0,
 })
 const money = (value: number) => Number(value).toFixed(2)
 const message = (err: unknown) =>
@@ -506,20 +551,26 @@ function edit(account: BillingAccount) {
     renewal_date: originalRenewalDate.value,
     plan_id: account.plan_id,
     price: account.price,
+    cost: account.cost,
     payer_id: account.payer_id,
     payment_status: account.payment_status,
   })
 }
 function applyPlan() {
   const plan = catalog.value.plans.find((p) => p.id === form.plan_id)
-  if (plan) form.price = plan.price
+  if (plan) {
+    form.price = plan.price
+    form.cost = plan.cost
+  }
 }
 async function save() {
   if (
     !editing.value ||
     saving.value ||
     !Number.isFinite(form.price) ||
-    form.price < 0
+    form.price < 0 ||
+    !Number.isFinite(form.cost) ||
+    form.cost < 0
   )
     return
   saving.value = true
@@ -540,10 +591,17 @@ async function save() {
 }
 function showHistory(account: BillingAccount) {
   historyAccount.value = account
+  historyForm.month = data.value?.month ?? ''
+  applyHistoryMonth()
+}
+function applyHistoryMonth() {
+  const account = historyAccount.value
+  if (!account) return
+  const current = account.history.find(entry => entry.month === historyForm.month)
   Object.assign(historyForm, {
-    month: data.value?.month ?? '',
-    status: account.payment_status,
-    amount: account.price,
+    status: current?.status ?? account.payment_status,
+    amount: current?.amount ?? account.price,
+    cost: current?.cost ?? account.cost,
   })
 }
 async function saveHistory() {
@@ -552,7 +610,9 @@ async function saveHistory() {
     saving.value ||
     !historyForm.month ||
     !Number.isFinite(historyForm.amount) ||
-    historyForm.amount < 0
+    historyForm.amount < 0 ||
+    !Number.isFinite(historyForm.cost) ||
+    historyForm.cost < 0
   )
     return
   saving.value = true
@@ -560,7 +620,7 @@ async function saveHistory() {
     await updateBillingHistory(
       historyAccount.value.account_id,
       historyForm.month,
-      { status: historyForm.status, amount: historyForm.amount },
+      { status: historyForm.status, amount: historyForm.amount, cost: historyForm.cost },
     )
     app.showSuccess('支付记录已保存')
     await load()

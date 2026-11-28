@@ -60,8 +60,11 @@ vi.mock('@/stores/app', () => ({
 }))
 
 vi.mock('@/stores/auth', () => ({
-  useAuthStore: () => ({ token: 'test-token' })
+  useAuthStore: () => authState
 }))
+
+const authState = vi.hoisted(() => ({ token: 'test-token', isAdmin: false }))
+beforeEach(() => { authState.isAdmin = false })
 
 vi.mock('vue-i18n', async () => {
   const actual = await vi.importActual<typeof import('vue-i18n')>('vue-i18n')
@@ -129,6 +132,7 @@ describe('admin AccountsView — 外审 F2:spark 影子创建接线', () => {
   })
 
   it('AccountActionMenu 的 duplicate 事件一键复制账号并刷新列表', async () => {
+    authState.isAdmin = true
     const wrapper = mountView()
     await flushPromises()
 
@@ -143,6 +147,7 @@ describe('admin AccountsView — 外审 F2:spark 影子创建接线', () => {
   })
 
   it('同一账号复制请求未完成时忽略重复点击', async () => {
+    authState.isAdmin = true
     let resolveDuplicate!: (account: { id: number; name: string }) => void
     duplicateAccount.mockImplementationOnce(() => new Promise(resolve => { resolveDuplicate = resolve }))
     const wrapper = mountView()
@@ -159,7 +164,21 @@ describe('admin AccountsView — 外审 F2:spark 影子创建接线', () => {
     wrapper.unmount()
   })
 
+  it('普通用户不显示复制入口且忽略复制事件', async () => {
+    authState.isAdmin = false
+    const wrapper = mountView()
+    await flushPromises()
+    const menu = wrapper.findComponent(AccountActionMenu)
+    expect(menu.props('showDuplicate')).toBe(false)
+    menu.vm.$emit('duplicate', { id: 42, name: 'parent-acc' })
+    await flushPromises()
+    expect(duplicateAccount).not.toHaveBeenCalled()
+    expect(showSuccess).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
+
   it('复制失败时显示后端错误', async () => {
+    authState.isAdmin = true
     const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {})
     duplicateAccount.mockRejectedValueOnce(new Error('duplicate failed'))
     const wrapper = mountView()

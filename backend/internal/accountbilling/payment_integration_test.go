@@ -3,6 +3,7 @@ package accountbilling
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -37,13 +38,16 @@ func TestAccountPaymentPostgresConcurrencyAndFulfillment(t *testing.T) {
 	require.NoError(t, err)
 	db.SetMaxOpenConns(8)
 	t.Cleanup(func() { _ = db.Close() })
-	_, err = db.Exec(`CREATE TABLE users(id BIGINT PRIMARY KEY,status TEXT NOT NULL,role TEXT NOT NULL,deleted_at TIMESTAMPTZ);
+	_, err = db.Exec(`CREATE TABLE users(id BIGINT PRIMARY KEY,status TEXT NOT NULL,role TEXT NOT NULL,deleted_at TIMESTAMPTZ,
+			balance NUMERIC(20,8) NOT NULL DEFAULT 0,total_recharged NUMERIC(20,8) NOT NULL DEFAULT 0,updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW());
+		CREATE TABLE redeem_codes(id BIGSERIAL PRIMARY KEY,code VARCHAR(32) NOT NULL UNIQUE,type VARCHAR(20) NOT NULL,
+			value NUMERIC(20,8) NOT NULL,status VARCHAR(20) NOT NULL,used_by BIGINT REFERENCES users(id),used_at TIMESTAMPTZ,notes TEXT);
 		CREATE TABLE accounts(id BIGINT PRIMARY KEY,name TEXT NOT NULL,platform TEXT NOT NULL,expires_at TIMESTAMPTZ,deleted_at TIMESTAMPTZ);
 		CREATE TABLE custom_user_accounts(account_id BIGINT PRIMARY KEY REFERENCES accounts(id),user_id BIGINT NOT NULL REFERENCES users(id));
 		CREATE TABLE payment_orders(id BIGINT PRIMARY KEY,user_id BIGINT NOT NULL,order_type TEXT NOT NULL,
 			status TEXT NOT NULL,amount NUMERIC(20,2) NOT NULL,paid_at TIMESTAMPTZ,expires_at TIMESTAMPTZ NOT NULL,updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW());`)
 	require.NoError(t, err)
-	for _, file := range []string{"253_custom_account_billing.sql", "254_custom_billing_renewal_schedule.sql", "256_custom_account_payment_orders.sql"} {
+	for _, file := range []string{"253_custom_account_billing.sql", "254_custom_billing_renewal_schedule.sql", "256_custom_account_payment_orders.sql", "258_custom_billing_cost.sql"} {
 		migration, readErr := os.ReadFile(filepath.Join("..", "..", "migrations", file))
 		require.NoError(t, readErr)
 		_, execErr := db.Exec(string(migration))
@@ -121,7 +125,7 @@ func TestAccountPaymentPostgresConcurrencyAndFulfillment(t *testing.T) {
 	// a pre-upgrade pending order was bound, while migration 257 now populated
 	// a non-null access deadline. Its paid callback must remain fulfillable.
 	_, err = db.Exec(`UPDATE custom_account_payment_orders c SET snapshot=(
-		SELECT jsonb_agg(item-'valid_through'-'expired'-'access_schema_version')
+		SELECT jsonb_agg(jsonb_set(item-'valid_through'-'expired'-'access_schema_version'-'billing_cost', '{history}', (item->'history')-'cost'))
 		FROM jsonb_array_elements(c.snapshot) item) WHERE c.order_id=101`)
 	require.NoError(t, err)
 	// Simulate the scheduler running before a delayed callback in February.
@@ -272,4 +276,59 @@ func TestAccountPaymentPostgresConcurrencyAndFulfillment(t *testing.T) {
 	require.Len(t, summary.Accounts, 1)
 	require.Equal(t, int64(11), summary.Accounts[0].AccountID)
 	require.Nil(t, summary.Accounts[0].ValidThrough)
+
+	// Nonzero cost scenarios use the same real ledger and gateway transaction.
+	// Changing a plan is a catalog edit; existing monthly account snapshots stay
+	// fixed until the administrator explicitly changes that account's cost.
+	plan, err := store.SavePlan(ctx, 0, Plan{Platform: "openai", Name: "Cost plan", Price: 12345, Cost: 7000})
+	require.NoError(t, err)
+	payer, err := store.SavePayer(ctx, 0, Payer{Name: "Cost payer"})
+	require.NoError(t, err)
+	updated, err = store.UpdateAccount(ctx, 11, AccountUpdate{
+		RenewalDate: paymentDate("2027-04-30"), RenewalDateChanged: &changed,
+		PlanID: &plan.ID, Price: 12345, PayerID: &payer.ID, PaymentStatus: "unpaid",
+	})
+	require.NoError(t, err)
+	require.Equal(t, Money(7000), updated.Cost, "selecting a plan defaults its cost without requiring a client override")
+	_, err = store.UpdateAccount(ctx, 12, AccountUpdate{
+		RenewalDateChanged: &unchanged, PlanID: &plan.ID, Price: 10000, Cost: costValue(20000),
+		PayerID: &payer.ID, PaymentStatus: "paid",
+	})
+	require.NoError(t, err)
+	plan.Cost = 9000
+	plan, err = store.SavePlan(ctx, plan.ID, plan)
+	require.NoError(t, err)
+	catalog, err := store.Catalog(ctx)
+	require.NoError(t, err)
+	require.Equal(t, Money(9000), catalog.Plans[0].Cost)
+	costQuote, err := store.PaymentQuote(ctx, 7)
+	require.NoError(t, err)
+	rawQuote, err := json.Marshal(costQuote)
+	require.NoError(t, err)
+	require.NotContains(t, string(rawQuote), "cost", "ordinary users cannot inspect subscription costs")
+	_, err = db.Exec(`INSERT INTO payment_orders(id,user_id,order_type,status,amount,expires_at)
+		VALUES(103,7,'account','PENDING',123.45,NOW()+INTERVAL '30 minutes')`)
+	require.NoError(t, err)
+	require.NoError(t, store.BindPaymentOrder(ctx, 103, 7, costQuote.QuoteToken, 123.45))
+	_, err = db.Exec(`UPDATE payment_orders SET status='RECHARGING',paid_at=NOW() WHERE id=103`)
+	require.NoError(t, err)
+	require.NoError(t, store.FulfillPaymentOrder(ctx, 103, 7))
+	costList, err := store.List(ctx, "2027-04")
+	require.NoError(t, err)
+	require.Equal(t, Money(22345), costList.Summary.PaidTotalAmount)
+	require.Equal(t, Money(27000), costList.Summary.PaidTotalCost)
+	require.Equal(t, Money(-4655), costList.Summary.PaidProfit)
+	require.Equal(t, Money(27000), costList.Summary.Payers[0].Total)
+	require.Equal(t, Money(7000), costList.Items[0].Cost, "payment preserves the bound monthly cost after catalog edits")
+	_, err = store.UpdateHistory(ctx, 11, History{Month: "2027-04", Status: "paid", Amount: 12345})
+	require.NoError(t, err)
+	costList, err = store.List(ctx, "2027-04")
+	require.NoError(t, err)
+	require.Equal(t, Money(7000), costList.Items[0].Cost, "older history API clients preserve the stored cost")
+	store.now = func() time.Time { return renewalTestTimeRaw("2027-05-01") }
+	_, err = store.List(ctx, "2027-05")
+	require.NoError(t, err)
+	costList, err = store.List(ctx, "2027-04")
+	require.NoError(t, err)
+	require.Equal(t, Money(27000), costList.Summary.PaidTotalCost, "a new business month retains earlier paid cost snapshots")
 }

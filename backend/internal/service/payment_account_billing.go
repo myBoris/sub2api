@@ -12,8 +12,8 @@ import (
 	"github.com/shopspring/decimal"
 )
 
-// Account billing is an extension of the existing gateway lifecycle. Its ledger
-// stays in custom tables and never uses balance redemption or API subscriptions.
+// Account billing extends the existing gateway lifecycle. Its fulfillment
+// transaction renews the paid accounts and refills the payer's API balance.
 type accountBillingPayments interface {
 	PaymentQuote(context.Context, int64) (*accountbilling.PaymentQuote, error)
 	BindPaymentOrder(context.Context, int64, int64, string, float64) error
@@ -115,9 +115,30 @@ func (s *PaymentService) ExecuteAccountPaymentFulfillment(ctx context.Context, o
 	} else {
 		err = s.accountBilling.FulfillPaymentOrder(ctx, o.ID, o.UserID)
 	}
+	if err == nil {
+		err = s.invalidateAccountPaymentBalanceCache(ctx, o.UserID)
+	}
 	if err != nil {
 		s.markFailed(ctx, o.ID, lease, err)
 		return accountPaymentError(err)
 	}
 	return s.markCompleted(ctx, o, lease, "ACCOUNT_PAYMENT_SUCCESS")
+}
+
+// Clear the same caches as the recharge service before acknowledging payment.
+// If Redis is unavailable, the existing fulfillment retry clears it again;
+// the ledger's committed fulfillment marker prevents another balance refill.
+func (s *PaymentService) invalidateAccountPaymentBalanceCache(ctx context.Context, userID int64) error {
+	if s.redeemService == nil {
+		return nil
+	}
+	if invalidator := s.redeemService.authCacheInvalidator; invalidator != nil {
+		invalidator.InvalidateAuthCacheByUserID(ctx, userID)
+	}
+	if cache := s.redeemService.billingCacheService; cache != nil {
+		if err := cache.InvalidateUserBalance(ctx, userID); err != nil {
+			return fmt.Errorf("invalidate account payment balance cache: %w", err)
+		}
+	}
+	return nil
 }

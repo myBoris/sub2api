@@ -805,6 +805,7 @@ const adminNavItems = computed((): NavItem[] => {
     { path: '/admin/accounts', label: t('nav.accounts'), icon: GlobeIcon },
     { path: '/admin/billing/catalog', label: '售价与代付者', icon: PriceTagIcon },
     { path: '/admin/billing/accounts', label: '账号支付状态', icon: CreditCardIcon },
+    { path: '/admin/billing/subscription-requests', label: '订阅账号申请', icon: UsersIcon },
     { path: '/admin/plugins', label: t('nav.plugins'), icon: PluginIcon, featureFlag: flagPluginManagement },
     { path: '/admin/announcements', label: t('nav.announcements'), icon: BellIcon },
     { path: '/admin/proxies', label: t('nav.proxies'), icon: ServerIcon },

@@ -4,6 +4,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"math"
 	"net/url"
 	"testing"
@@ -20,6 +21,17 @@ type accountBillingPaymentsStub struct {
 	quote        *accountbilling.PaymentQuote
 	err          error
 	fulfillCalls int
+}
+
+type accountPaymentBalanceCacheStub struct {
+	BillingCache
+	users []int64
+	err   error
+}
+
+func (s *accountPaymentBalanceCacheStub) InvalidateUserBalance(_ context.Context, userID int64) error {
+	s.users = append(s.users, userID)
+	return s.err
 }
 
 func (s *accountBillingPaymentsStub) PaymentQuote(context.Context, int64) (*accountbilling.PaymentQuote, error) {
@@ -81,16 +93,67 @@ func TestAccountPaymentFulfillmentUsesLedgerAndIsIdempotent(t *testing.T) {
 	order, err := client.PaymentOrder.UpdateOneID(order.ID).SetOrderType(accountPaymentOrderType).SetPaidAt(time.Now()).Save(ctx)
 	require.NoError(t, err)
 	store := &accountBillingPaymentsStub{}
-	// Nil balance and subscription services ensure this path cannot credit either.
-	svc := &PaymentService{entClient: client, accountBilling: store}
+	authCache := &authCacheInvalidatorStub{}
+	balanceCache := &accountPaymentBalanceCacheStub{}
+	svc := &PaymentService{entClient: client, accountBilling: store, redeemService: &RedeemService{
+		authCacheInvalidator: authCache,
+		billingCacheService:  &BillingCacheService{cache: balanceCache},
+	}}
 	require.NoError(t, svc.executeFulfillment(ctx, order.ID))
 	require.NoError(t, svc.executeFulfillment(ctx, order.ID))
 	require.Equal(t, 1, store.fulfillCalls)
+	require.Equal(t, []int64{order.UserID}, authCache.userIDs)
+	require.Equal(t, []int64{order.UserID}, balanceCache.users)
 	reloaded, err := client.PaymentOrder.Get(ctx, order.ID)
 	require.NoError(t, err)
 	require.Equal(t, OrderStatusCompleted, reloaded.Status)
 	_, _, err = svc.PrepareRefund(ctx, order.ID, 0, "refund", false, true)
 	require.Equal(t, "ACCOUNT_REFUND_MANUAL_REQUIRED", infraerrors.Reason(err))
+}
+
+func TestAccountPaymentCacheFailureRetriesAfterCommittedLedger(t *testing.T) {
+	ctx := context.Background()
+	client := newPaymentConfigServiceTestClient(t)
+	order := createPaymentFulfillmentSubscriptionOrder(t, ctx, client, OrderStatusPaid, time.Now())
+	order, err := client.PaymentOrder.UpdateOneID(order.ID).SetOrderType(accountPaymentOrderType).SetPaidAt(time.Now()).Save(ctx)
+	require.NoError(t, err)
+	store := &accountBillingPaymentsStub{}
+	authCache := &authCacheInvalidatorStub{}
+	balanceCache := &accountPaymentBalanceCacheStub{err: errors.New("redis unavailable")}
+	svc := &PaymentService{entClient: client, accountBilling: store, redeemService: &RedeemService{
+		authCacheInvalidator: authCache,
+		billingCacheService:  &BillingCacheService{cache: balanceCache},
+	}}
+	require.ErrorContains(t, svc.executeFulfillment(ctx, order.ID), "redis unavailable")
+	reloaded, err := client.PaymentOrder.Get(ctx, order.ID)
+	require.NoError(t, err)
+	require.Equal(t, OrderStatusFailed, reloaded.Status, "payment cannot complete while stale billing balance remains cached")
+	require.Equal(t, 1, store.fulfillCalls)
+	balanceCache.err = nil
+	require.NoError(t, svc.RetryFulfillment(ctx, order.ID))
+	require.NoError(t, svc.executeFulfillment(ctx, order.ID))
+	require.Equal(t, 2, store.fulfillCalls, "the committed ledger is retried through its idempotent fulfillment entry")
+	require.Equal(t, []int64{order.UserID, order.UserID}, authCache.userIDs)
+	require.Equal(t, []int64{order.UserID, order.UserID}, balanceCache.users)
+	reloaded, err = client.PaymentOrder.Get(ctx, order.ID)
+	require.NoError(t, err)
+	require.Equal(t, OrderStatusCompleted, reloaded.Status)
+}
+
+func TestAccountPaymentUnpaidOrderCannotRefillBalanceOrInvalidateCaches(t *testing.T) {
+	ctx := context.Background()
+	client := newPaymentConfigServiceTestClient(t)
+	order := createPaymentFulfillmentSubscriptionOrder(t, ctx, client, OrderStatusPending, time.Now())
+	order, err := client.PaymentOrder.UpdateOneID(order.ID).SetOrderType(accountPaymentOrderType).ClearPaidAt().Save(ctx)
+	require.NoError(t, err)
+	store := &accountBillingPaymentsStub{}
+	balanceCache := &accountPaymentBalanceCacheStub{}
+	svc := &PaymentService{entClient: client, accountBilling: store, redeemService: &RedeemService{
+		billingCacheService: &BillingCacheService{cache: balanceCache},
+	}}
+	require.Equal(t, "INVALID_STATUS", infraerrors.Reason(svc.ExecuteAccountPaymentFulfillment(ctx, order.ID)))
+	require.Zero(t, store.fulfillCalls)
+	require.Empty(t, balanceCache.users)
 }
 
 func TestAccountPaymentFulfillmentFailureCanRetry(t *testing.T) {

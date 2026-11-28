@@ -7,6 +7,7 @@ export interface BillingPlan {
   platform: string
   name: string
   price: number
+  cost: number
 }
 
 export interface BillingPayer {
@@ -18,6 +19,7 @@ export interface BillingHistory {
   month: string
   status: BillingPaymentStatus
   amount: number
+  cost: number
 }
 
 export interface BillingAccount {
@@ -30,6 +32,7 @@ export interface BillingAccount {
   plan_id: number | null
   plan_name: string | null
   price: number
+  cost: number
   payer_id: number | null
   payer_name: string | null
   payment_status: BillingPaymentStatus
@@ -46,6 +49,9 @@ export interface BillingAccountList {
   month: string
   summary: {
     paid_count: number
+    paid_total_amount: number
+    paid_total_cost: number
+    paid_profit: number
     unpaid_count: number
     due_soon_count: number
     payers: Array<{
@@ -68,6 +74,7 @@ export interface BillingAccountUpdate {
   renewal_date_changed?: boolean
   plan_id: number | null
   price: number
+  cost?: number
   payer_id: number | null
   payment_status: BillingPaymentStatus
 }
@@ -151,7 +158,7 @@ export async function updateBillingAccount(
 export async function updateBillingHistory(
   id: number,
   month: string,
-  record: Pick<BillingHistory, 'status' | 'amount'>,
+  record: Pick<BillingHistory, 'status' | 'amount'> & Partial<Pick<BillingHistory, 'cost'>>,
 ): Promise<BillingAccount> {
   return (
     await apiClient.put<BillingAccount>(

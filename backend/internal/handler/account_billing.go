@@ -92,12 +92,17 @@ func (h *AccountBillingHandler) SavePlan(c *gin.Context) {
 		Platform string                `json:"platform"`
 		Name     string                `json:"name"`
 		Price    *accountbilling.Money `json:"price"`
+		Cost     *accountbilling.Money `json:"cost"`
 	}
 	if c.ShouldBindJSON(&request) != nil || request.Price == nil {
 		response.BadRequest(c, "请填写平台、套餐名称和人民币售价（最多两位小数）")
 		return
 	}
-	p, err := h.store.SavePlan(c.Request.Context(), id, accountbilling.Plan{Platform: request.Platform, Name: request.Name, Price: *request.Price})
+	cost := accountbilling.Money(0)
+	if request.Cost != nil {
+		cost = *request.Cost
+	}
+	p, err := h.store.SavePlan(c.Request.Context(), id, accountbilling.Plan{Platform: request.Platform, Name: request.Name, Price: *request.Price, Cost: cost}, request.Cost != nil)
 	if err != nil {
 		billingError(c, err)
 		return
@@ -205,6 +210,7 @@ func (h *AccountBillingHandler) Update(c *gin.Context) {
 		RenewalDateChanged *bool                 `json:"renewal_date_changed"`
 		PlanID             *int64                `json:"plan_id"`
 		Price              *accountbilling.Money `json:"price"`
+		Cost               *accountbilling.Money `json:"cost"`
 		PayerID            *int64                `json:"payer_id"`
 		PaymentStatus      string                `json:"payment_status"`
 	}
@@ -212,7 +218,7 @@ func (h *AccountBillingHandler) Update(c *gin.Context) {
 		response.BadRequest(c, "请填写完整账号支付信息，金额最多两位小数")
 		return
 	}
-	a, err := h.store.UpdateAccount(c.Request.Context(), id, accountbilling.AccountUpdate{RenewalDate: request.RenewalDate, RenewalDateChanged: request.RenewalDateChanged, PlanID: request.PlanID, Price: *request.Price, PayerID: request.PayerID, PaymentStatus: request.PaymentStatus})
+	a, err := h.store.UpdateAccount(c.Request.Context(), id, accountbilling.AccountUpdate{RenewalDate: request.RenewalDate, RenewalDateChanged: request.RenewalDateChanged, PlanID: request.PlanID, Price: *request.Price, Cost: request.Cost, PayerID: request.PayerID, PaymentStatus: request.PaymentStatus})
 	if err != nil {
 		billingError(c, err)
 		return
@@ -228,12 +234,13 @@ func (h *AccountBillingHandler) UpdateHistory(c *gin.Context) {
 	var request struct {
 		Status string                `json:"status"`
 		Amount *accountbilling.Money `json:"amount"`
+		Cost   *accountbilling.Money `json:"cost"`
 	}
 	if c.ShouldBindJSON(&request) != nil || request.Amount == nil {
 		response.BadRequest(c, "请填写支付状态和金额（最多两位小数）")
 		return
 	}
-	a, err := h.store.UpdateHistory(c.Request.Context(), id, accountbilling.History{Month: c.Param("month"), Status: request.Status, Amount: *request.Amount})
+	a, err := h.store.UpdateHistory(c.Request.Context(), id, accountbilling.History{Month: c.Param("month"), Status: request.Status, Amount: *request.Amount}, request.Cost)
 	if err != nil {
 		billingError(c, err)
 		return

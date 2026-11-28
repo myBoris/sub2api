@@ -5,7 +5,7 @@
         <div>
           <h1 class="text-xl font-semibold">售价与订阅代付者</h1>
           <p class="mt-1 text-sm text-gray-500">
-            维护 AI 平台套餐的人民币售价，以及负责代付订阅的人员。
+            维护 AI 平台套餐的人民币售价、成本，以及负责代付订阅的人员。
           </p>
         </div>
         <button class="btn btn-secondary" :disabled="loading" @click="load">
@@ -47,6 +47,7 @@
                   <th>AI 平台</th>
                   <th>套餐名字</th>
                   <th>人民币售价</th>
+                  <th>人民币成本</th>
                   <th>操作</th>
                 </tr>
               </thead>
@@ -55,6 +56,7 @@
                   <td>{{ plan.platform }}</td>
                   <td class="font-medium">{{ plan.name }}</td>
                   <td>¥{{ money(plan.price) }}</td>
+                  <td>¥{{ money(plan.cost) }}</td>
                   <td>
                     <div class="flex gap-4">
                       <button class="text-primary-600" @click="openPlan(plan)">
@@ -75,7 +77,7 @@
                   </td>
                 </tr>
                 <tr v-if="!filteredPlans.length">
-                  <td colspan="4" class="py-10 text-center text-gray-500">
+                  <td colspan="5" class="py-10 text-center text-gray-500">
                     {{
                       planSearch ? '没有匹配的套餐' : '暂无套餐，请先新增套餐'
                     }}
@@ -186,6 +188,16 @@
             step="0.01"
             class="input mt-2"
         /></label>
+        <label v-if="dialog === 'plan'" class="block text-sm"
+          >人民币成本<input
+            v-model.number="form.cost"
+            required
+            type="number"
+            min="0"
+            max="99999999"
+            step="0.01"
+            class="input mt-2"
+        /></label>
       </form>
       <template #footer
         ><div class="flex justify-end gap-3">
@@ -264,7 +276,7 @@ const pendingDelete = ref<{
   id: number
   name: string
 } | null>(null)
-const form = reactive({ platform: '', name: '', price: 0 })
+const form = reactive({ platform: '', name: '', price: 0, cost: 0 })
 const filteredPlans = computed(() =>
   plans.value.filter((p) =>
     `${p.platform} ${p.name}`
@@ -299,12 +311,13 @@ function openPlan(plan?: BillingPlan) {
     platform: plan?.platform ?? '',
     name: plan?.name ?? '',
     price: plan?.price ?? 0,
+    cost: plan?.cost ?? 0,
   })
   dialog.value = 'plan'
 }
 function openPayer(payer?: BillingPayer) {
   editingId.value = payer?.id ?? null
-  Object.assign(form, { platform: '', name: payer?.name ?? '', price: 0 })
+  Object.assign(form, { platform: '', name: payer?.name ?? '', price: 0, cost: 0 })
   dialog.value = 'payer'
 }
 function closeDialog() {
@@ -314,7 +327,9 @@ async function save() {
   if (saving.value || !form.name.trim()) return
   if (
     dialog.value === 'plan' &&
-    (!form.platform.trim() || !Number.isFinite(form.price) || form.price < 0)
+    (!form.platform.trim() ||
+      !Number.isFinite(form.price) || form.price < 0 ||
+      !Number.isFinite(form.cost) || form.cost < 0)
   )
     return
   saving.value = true

@@ -54,12 +54,21 @@ beforeEach(() => {
       plan_id: null,
       plan_name: null,
       price: 100,
+      cost: 60,
       payer_id: null,
       payer_name: null,
       payment_status: 'unpaid',
       history: [],
     }],
-    summary: { paid_count: 0, unpaid_count: 1, due_soon_count: 0, payers: [] },
+    summary: {
+      paid_count: 0,
+      paid_total_amount: 0,
+      paid_total_cost: 0,
+      paid_profit: 0,
+      unpaid_count: 1,
+      due_soon_count: 0,
+      payers: [],
+    },
   })
   mocks.getCatalog.mockResolvedValue({ plans: [], payers: [] })
   mocks.listBillingAccounts.mockResolvedValue(ledger)

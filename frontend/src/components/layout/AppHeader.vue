@@ -27,7 +27,8 @@
       />
 
       <!-- Right: Announcements + Docs + Language + Subscriptions + Balance + User Dropdown -->
-      <div class="order-2 flex min-w-0 items-center justify-end gap-1 sm:gap-3 2xl:order-3 2xl:flex-1">
+      <div class="order-2 flex min-w-0 max-w-full flex-wrap items-center justify-end gap-1 sm:gap-3 2xl:order-3 2xl:flex-1">
+        <SubscriptionRequestButton v-if="user?.role === 'user' && !authStore.isAdmin" />
         <!-- Announcement Bell -->
         <AnnouncementBell v-if="user" />
 
@@ -266,6 +267,7 @@ import LocaleSwitcher from '@/components/common/LocaleSwitcher.vue'
 import SubscriptionProgressMini from '@/components/common/SubscriptionProgressMini.vue'
 import AnnouncementBell from '@/components/common/AnnouncementBell.vue'
 import AccountBillingReminder from '@/components/common/AccountBillingReminder.vue'
+import SubscriptionRequestButton from '@/components/common/SubscriptionRequestButton.vue'
 import Icon from '@/components/icons/Icon.vue'
 import { sanitizeUrl } from '@/utils/url'
 import { FeatureFlags, isFeatureFlagEnabled } from '@/utils/featureFlags'

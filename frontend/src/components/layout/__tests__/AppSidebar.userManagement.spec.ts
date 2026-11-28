@@ -39,6 +39,7 @@ describe('ownership management navigation', () => {
     expect(wrapper.get('a[href="/accounts"]').text()).toBe('nav.accounts')
     expect(wrapper.find('a[href="/admin/users"]').exists()).toBe(false)
     expect(wrapper.find('a[href="/admin/accounts"]').exists()).toBe(false)
+    expect(wrapper.find('a[href="/admin/billing/subscription-requests"]').exists()).toBe(false)
     wrapper.unmount()
   })
 
@@ -47,6 +48,7 @@ describe('ownership management navigation', () => {
     const wrapper = mountSidebar()
     expect(wrapper.find('a[href="/admin/groups"]').exists()).toBe(true)
     expect(wrapper.find('a[href="/admin/accounts"]').exists()).toBe(true)
+    expect(wrapper.get('a[href="/admin/billing/subscription-requests"]').text()).toBe('订阅账号申请')
     expect(wrapper.find('a[href="/groups"]').exists()).toBe(false)
     expect(wrapper.find('a[href="/accounts"]').exists()).toBe(false)
     wrapper.unmount()

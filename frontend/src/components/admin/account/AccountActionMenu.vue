@@ -71,7 +71,7 @@ import type { Account } from '@/types'
 import { supportsAccountQuota } from '@/utils/accountQuota'
 import { isUserManagementSession } from '@/api/userManagement'
 
-const props = defineProps<{ show: boolean; account: Account | null; anchorRect: DOMRect | null }>()
+const props = withDefaults(defineProps<{ show: boolean; account: Account | null; anchorRect: DOMRect | null; showDuplicate?: boolean }>(), { showDuplicate: true })
 const emit = defineEmits(['close', 'test', 'stats', 'schedule', 'duplicate', 'reauth', 'refresh-token', 'recover-state', 'reset-quota', 'set-privacy', 'create-spark-shadow'])
 const { t } = useI18n()
 const menuRef = ref<HTMLElement | null>(null)
@@ -108,7 +108,7 @@ watch([menuRef, () => props.anchorRect, viewportWidth, viewportHeight], updatePo
 useResizeObserver(menuRef, updatePosition)
 
 const canDuplicate = computed(() => {
-  if (!props.account || props.account.parent_account_id != null) return false
+  if (!props.showDuplicate || !props.account || props.account.parent_account_id != null) return false
   return ['apikey', 'upstream', 'bedrock', 'service_account'].includes(props.account.type)
 })
 const isRateLimited = computed(() => {
